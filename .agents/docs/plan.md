@@ -107,7 +107,7 @@ Exact keys confirmed by `openchamber-guest-check`.
 ## Milestones
 
 1. **Scaffold** — package.json, SDK + Bun devDeps, manifest, empty page entry, bundle/check scripts, `openchamber-guest-check` passes, installs locally from folder.
-2. **Core + storage** — profile model, path matching, storage read/write, view-model incl. Unassigned, unit tests (`bun test`).
+2. **Core + storage** ✅ — profile model, path matching, storage read/write, view-model incl. Unassigned, unit tests (`bun test`).
 3. **Read-only views** — live projects/sessions via subscriptions; page renders the active profile; "not added" state; Unassigned view. *Then: time-boxed spike on approach B.*
 4. **Editing** — create/rename/delete profile, add/remove folders (picker + typed path), Unassigned → "Add to profile", switch active profile.
 5. **Actions** — New session, Open session.
