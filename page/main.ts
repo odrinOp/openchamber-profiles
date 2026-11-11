@@ -1,10 +1,24 @@
 import { connectHost } from '@openchamber/sdk';
 import { applyHostReady } from '@openchamber/sdk/ui';
+import { createStore } from './store.ts';
+import { mountApp } from './view.ts';
 
 const host = connectHost();
 const root = document.getElementById('app');
+if (!root) throw new Error('Missing #app');
 
-host.onReady((ctx) => {
-  applyHostReady(ctx, document.documentElement);
-  if (root) root.textContent = 'Profiles — scaffold';
-});
+const app = mountApp(root);
+const store = createStore(host);
+
+const handlers = {
+  selectProfile: (id: string) => store.selectProfile(id),
+  addToActiveProfile: (path: string) => store.addToActiveProfile(path),
+  removeFolder: (path: string) => store.removeFolder(path),
+};
+
+const render = () => app.render(store.get(), handlers);
+
+// Apply every theme snapshot, but mount and subscribe only once.
+host.onReady((ctx) => applyHostReady(ctx, document.documentElement));
+store.subscribe(render);
+render();

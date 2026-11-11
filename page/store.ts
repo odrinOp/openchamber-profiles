@@ -1,0 +1,177 @@
+import type { HostClient } from '@openchamber/sdk';
+import {
+  addFolder,
+  buildViewModel,
+  loadState,
+  removeFolder,
+  saveState,
+  setActiveProfile,
+  defaultState,
+  type Project,
+  type ProfilesState,
+  type Session,
+  type ViewModel,
+  type Worktree,
+} from '../src/core/index.ts';
+
+/** `host` allows 32 subscriptions per iframe: 1 for projects, the rest for sessions. */
+const MAX_SESSION_SUBSCRIPTIONS = 31;
+
+export type StoreState = {
+  status: 'loading' | 'ready' | 'error';
+  error?: string;
+  corrupt: boolean;
+  vm: ViewModel;
+};
+
+export type Store = {
+  get(): StoreState;
+  subscribe(listener: () => void): () => void;
+  selectProfile(id: string): void;
+  addToActiveProfile(path: string): void;
+  removeFolder(path: string): void;
+  dispose(): void;
+};
+
+const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+export const createStore = (host: HostClient): Store => {
+  let persisted: ProfilesState = defaultState();
+  let corrupt = false;
+  let loaded = false;
+  let projects: Project[] = [];
+  let projectsState: 'loading' | 'ready' | 'error' = 'loading';
+  let worktrees: Record<string, Worktree[]> = {};
+  let sessions: Record<string, Session[]> = {};
+  let fatal: string | undefined;
+  let disposed = false;
+
+  const sessionSubs = new Map<string, () => void>();
+  let unsubscribeProjects: (() => void) | null = null;
+  const listeners = new Set<() => void>();
+  let snapshot: StoreState;
+
+  const compute = (): StoreState => {
+    const vm = buildViewModel({ state: persisted, projects, worktrees, sessions });
+    let status: StoreState['status'] = 'ready';
+    let error: string | undefined;
+    if (fatal) {
+      status = 'error';
+      error = fatal;
+    } else if (!loaded || projectsState === 'loading') {
+      status = 'loading';
+    } else if (projectsState === 'error' && projects.length === 0) {
+      status = 'error';
+      error = 'Could not load projects from OpenChamber.';
+    }
+    return { status, error, corrupt, vm };
+  };
+
+  const emit = () => {
+    snapshot = compute();
+    reconcileSessionSubs();
+    for (const l of listeners) l();
+  };
+
+  /** Subscribe to sessions only for projects the active profile uses. */
+  const reconcileSessionSubs = () => {
+    const wanted = new Set<string>();
+    for (const f of snapshot.vm.activeProfile.folders) {
+      if (f.project) wanted.add(f.project.id);
+      if (wanted.size >= MAX_SESSION_SUBSCRIPTIONS) break;
+    }
+    for (const [id, unsubscribe] of sessionSubs) {
+      if (!wanted.has(id)) {
+        unsubscribe();
+        sessionSubs.delete(id);
+        delete sessions[id];
+      }
+    }
+    for (const id of wanted) {
+      if (sessionSubs.has(id)) continue;
+      sessionSubs.set(id, () => {});
+      host
+        .onSessions(id, (snap) => {
+          sessions = { ...sessions, [id]: snap.sessions };
+          emit();
+        })
+        .then((unsubscribe) => {
+          if (disposed || !sessionSubs.has(id)) unsubscribe();
+          else sessionSubs.set(id, unsubscribe);
+        })
+        .catch((err) => {
+          sessionSubs.delete(id);
+          console.error('sessions subscription failed', id, err);
+        });
+    }
+  };
+
+  const refreshWorktrees = async (list: Project[]) => {
+    const entries = await Promise.all(
+      list.map(async (p): Promise<[string, Worktree[]]> => {
+        try {
+          return [p.id, (await host.listWorktrees(p.id)).worktrees];
+        } catch {
+          return [p.id, []];
+        }
+      }),
+    );
+    if (disposed) return;
+    worktrees = Object.fromEntries(entries);
+    emit();
+  };
+
+  // Serialize writes so the last edit always wins.
+  let writing: Promise<void> = Promise.resolve();
+  const commit = (next: ProfilesState) => {
+    persisted = next;
+    corrupt = false;
+    emit();
+    writing = writing
+      .then(() => saveState(host.storage, persisted))
+      .catch((err) => {
+        void host.toast({ kind: 'error', message: `Could not save profiles: ${message(err)}` });
+      });
+  };
+
+  snapshot = compute();
+
+  void (async () => {
+    try {
+      const result = await loadState(host.storage);
+      persisted = result.state;
+      corrupt = result.corrupt;
+      loaded = true;
+      emit();
+      const unsubscribe = await host.onProjects((snap) => {
+        projects = snap.projects;
+        projectsState = snap.state;
+        emit();
+        void refreshWorktrees(projects);
+      });
+      if (disposed) unsubscribe();
+      else unsubscribeProjects = unsubscribe;
+    } catch (err) {
+      fatal = message(err);
+      emit();
+    }
+  })();
+
+  return {
+    get: () => snapshot,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    selectProfile: (id) => commit(setActiveProfile(persisted, id)),
+    addToActiveProfile: (path) => commit(addFolder(persisted, persisted.activeId, path)),
+    removeFolder: (path) => commit(removeFolder(persisted, persisted.activeId, path)),
+    dispose() {
+      disposed = true;
+      unsubscribeProjects?.();
+      for (const unsubscribe of sessionSubs.values()) unsubscribe();
+      sessionSubs.clear();
+      listeners.clear();
+    },
+  };
+};

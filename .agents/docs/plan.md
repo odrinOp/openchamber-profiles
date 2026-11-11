@@ -108,7 +108,7 @@ Exact keys confirmed by `openchamber-guest-check`.
 
 1. **Scaffold** — package.json, SDK + Bun devDeps, manifest, empty page entry, bundle/check scripts, `openchamber-guest-check` passes, installs locally from folder.
 2. **Core + storage** ✅ — profile model, path matching, storage read/write, view-model incl. Unassigned, unit tests (`bun test`).
-3. **Read-only views** — live projects/sessions via subscriptions; page renders the active profile; "not added" state; Unassigned view. *Then: time-boxed spike on approach B.*
+3. **Read-only views** (+ minimal "Add to profile"/Remove so it is testable) ✅ — live projects/sessions via subscriptions; page renders the active profile; "not added" state; Unassigned view. *Then: time-boxed spike on approach B.*
 4. **Editing** — create/rename/delete profile, add/remove folders (picker + typed path), Unassigned → "Add to profile", switch active profile.
 5. **Actions** — New session, Open session.
 6. **Status section + file action** — Work Status section (page logic reused); "Move folder to profile" file action.
@@ -117,6 +117,7 @@ Exact keys confirmed by `openchamber-guest-check`.
 
 ## Verification
 
+- Subscription budget: the host allows 32 subscriptions per iframe. The page uses 1 for projects and 1 per project of the active profile for sessions (max 31); worktrees are fetched one-shot with `listWorktrees` and refreshed when projects change.
 - Unit tests for `core` (path matching incl. worktrees, schema migration, view-model, Unassigned).
 - `openchamber-guest-check` clean.
 - Manual in OpenChamber: install from folder → switch profile → registered/not-added/Unassigned folders → start/open session → reload app and confirm persistence.
