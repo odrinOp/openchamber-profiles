@@ -528,4 +528,10 @@ export const VIEW_CSS = `
     justify-content: flex-end;
   }
 }
+
+.oc-profiles-session-count {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
 `;

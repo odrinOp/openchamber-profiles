@@ -9,6 +9,7 @@ import {
   removeFolder,
   saveState,
   setActiveProfile,
+  setShowSessions,
   defaultState,
   type Project,
   type ProfilesState,
@@ -34,6 +35,7 @@ export type Store = {
   get(): StoreState;
   subscribe(listener: () => void): () => void;
   selectProfile(id: string): void;
+  setShowSessions(show: boolean): void;
   createProfile(name: string): void;
   renameProfile(id: string, name: string): void;
   deleteProfile(id: string): void;
@@ -214,6 +216,7 @@ export const createStore = (host: HostClient): Store => {
       return () => listeners.delete(listener);
     },
     selectProfile: (id) => edit((s) => setActiveProfile(s, id)),
+    setShowSessions: (show) => edit((s) => setShowSessions(s, show)),
     createProfile: (name) => edit((s) => {
       const next = createProfile(s, name);
       return setActiveProfile(next, next.profiles[next.profiles.length - 1]!.id);

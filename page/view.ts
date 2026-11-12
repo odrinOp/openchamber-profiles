@@ -9,6 +9,7 @@ import {
   mountBadge,
   mountBanner,
   mountButton,
+  mountSwitch,
   mountEmpty,
   mountList,
   mountSearchField,
@@ -42,6 +43,7 @@ export type ViewHandlers = {
   createProfile(name: string): void; // store selects the new profile afterwards
   renameProfile(id: string, name: string): void;
   deleteProfile(id: string): void;
+  setShowSessions(show: boolean): void;
   addFolder(path: string, profileId?: string): void; // omit profileId = active profile
   removeFolder(path: string): void; // from the active profile
   newSession(path: string): void; // folder path (FolderView.path); store starts a session in that folder's project/worktree and opens the chat
@@ -110,7 +112,7 @@ const ensureViewStyle = (css: string) => {
 
 type FolderCardHandle = {
   element: HTMLElement;
-  update(folder: FolderView, handlers: ViewHandlers): void;
+  update(folder: FolderView, handlers: ViewHandlers, showSessions: boolean): void;
   dispose(): void;
 };
 
@@ -123,7 +125,7 @@ type SessionRow = {
   setSessionId: (id: string) => void;
 };
 
-const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandlers): FolderCardHandle => {
+const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandlers, initialShowSessions: boolean): FolderCardHandle => {
   const card = document.createElement('div');
   card.className = 'oc-profiles-folder-card';
 
@@ -156,6 +158,11 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
   titleRow.appendChild(statusDot);
   titleRow.appendChild(basename);
   titleRow.appendChild(worktreeTag);
+
+  const sessionCount = document.createElement('span');
+  sessionCount.className = 'oc-profiles-session-count';
+  sessionCount.style.display = 'none';
+  titleRow.appendChild(sessionCount);
 
   const pathEl = document.createElement('span');
   pathEl.className = 'oc-profiles-folder-path';
@@ -232,7 +239,7 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
 
   let sessionRows: SessionRow[] = [];
 
-  const update = (folder: FolderView, handlers: ViewHandlers) => {
+  const update = (folder: FolderView, handlers: ViewHandlers, showSessions: boolean) => {
     currentFolder = folder;
     currentHandlers = handlers;
 
@@ -246,6 +253,11 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
     basename.title = folder.path;
     pathEl.textContent = folder.path;
     pathEl.title = folder.path;
+
+    // Session count (only when sessions are hidden)
+    const total = folder.sessions.length + folder.hiddenSessions;
+    sessionCount.textContent = `${total} ${total === 1 ? 'session' : 'sessions'}`;
+    sessionCount.style.display = folder.kind === 'registered' && !showSessions ? '' : 'none';
 
     // Worktree badge
     worktreeTag.style.display = folder.via === 'worktree' ? '' : 'none';
@@ -276,6 +288,7 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
       if (notAddedCallout.parentElement) {
         notAddedCallout.remove();
       }
+      sessionsContainer.style.display = showSessions ? '' : 'none';
       if (!sessionsContainer.parentElement) {
         card.appendChild(sessionsContainer);
       }
@@ -370,7 +383,7 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
     }
   };
 
-  update(initialFolder, initialHandlers);
+  update(initialFolder, initialHandlers, initialShowSessions);
 
   return {
     element: card,
@@ -803,6 +816,12 @@ export const mountApp = (root: HTMLElement): App => {
   headerActions.className = 'oc-profiles-header-actions';
   headerTop.appendChild(headerActions);
 
+  const showSessionsSwitch = mountSwitch(headerActions, {
+    label: 'Show sessions',
+    checked: true,
+    onChange: (next: boolean) => lastHandlers?.setShowSessions(next),
+  });
+
   const renameBtn = mountButton(headerActions, {
     label: 'Rename',
     variant: 'ghost',
@@ -1179,6 +1198,7 @@ export const mountApp = (root: HTMLElement): App => {
       const active = state.vm.activeProfile;
       headerActions.style.display = '';
 
+      showSessionsSwitch.update({ checked: state.vm.showSessions });
       // Inline rename UI
       if (isRenamingProfile && renamingProfileId === active.id) {
         mainTitle.style.display = 'none';
@@ -1271,11 +1291,11 @@ export const mountApp = (root: HTMLElement): App => {
         for (const folder of active.folders) {
           let card = folderCardPool.get(folder.path);
           if (!card) {
-            card = createFolderCard(folder, handlers);
+            card = createFolderCard(folder, handlers, state.vm.showSessions);
             folderCardPool.set(folder.path, card);
           } else {
             card.element.style.display = '';
-            card.update(folder, handlers);
+            card.update(folder, handlers, state.vm.showSessions);
           }
           contentArea.appendChild(card.element);
         }
@@ -1363,6 +1383,7 @@ export const mountApp = (root: HTMLElement): App => {
       renameSaveBtn.dispose();
       renameCancelBtn.dispose();
       renameBtn.dispose();
+      showSessionsSwitch.dispose();
       deleteBtn.dispose();
       addFolderBtn.dispose();
       deleteConfirmBtn.dispose();

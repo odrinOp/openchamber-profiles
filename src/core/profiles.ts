@@ -3,6 +3,11 @@ import type { Profile, ProfilesState } from './types.ts';
 
 export const DEFAULT_PROFILE_ID = 'default';
 
+export const setShowSessions = (state: ProfilesState, show: boolean): ProfilesState => {
+  const { showSessions: _omit, ...rest } = state;
+  return show ? rest : { ...rest, showSessions: false };
+};
+
 export const defaultState = (): ProfilesState => ({
   version: 1,
   activeId: DEFAULT_PROFILE_ID,

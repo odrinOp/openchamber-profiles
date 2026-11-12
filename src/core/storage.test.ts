@@ -56,4 +56,11 @@ describe('storage', () => {
     expect(result.corrupt).toBe(true);
     expect(store.data[STORAGE_KEY]).toBe('garbage');
   });
+
+  test('showSessions false round-trips; missing means shown', () => {
+    const base = { version: 1, activeId: 'w', profiles: [{ id: 'w', name: 'W', folders: [] }] };
+    expect(parseState({ ...base, showSessions: false }).state.showSessions).toBe(false);
+    expect(parseState(base).state.showSessions).toBeUndefined();
+    expect(parseState({ ...base, showSessions: 'no' }).state.showSessions).toBeUndefined();
+  });
 });

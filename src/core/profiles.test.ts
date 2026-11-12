@@ -8,6 +8,7 @@ import {
   removeFolder,
   renameProfile,
   setActiveProfile,
+  setShowSessions,
 } from './profiles.ts';
 
 describe('profiles', () => {
@@ -69,5 +70,13 @@ describe('profiles', () => {
     s = moveFolder(s, '/a', 'work');
     expect(s.profiles.map((p) => p.folders)).toEqual([[], ['/a']]);
     expect(() => moveFolder(s, '/a', 'nope')).toThrow();
+  });
+
+  test('setShowSessions toggles and drops the key when shown', () => {
+    const hidden = setShowSessions(defaultState(), false);
+    expect(hidden.showSessions).toBe(false);
+    const shown = setShowSessions(hidden, true);
+    expect('showSessions' in shown).toBe(false);
+    expect(shown).toEqual(defaultState());
   });
 });

@@ -47,7 +47,9 @@ export const parseState = (raw: unknown): LoadResult => {
     return { state: defaultState(), corrupt: true };
   }
   const activeId = typeof raw.activeId === 'string' && ids.has(raw.activeId) ? raw.activeId : profiles[0]!.id;
-  return { state: { version: 1, activeId, profiles }, corrupt: false };
+  const state: ProfilesState = { version: 1, activeId, profiles };
+  if (raw.showSessions === false) state.showSessions = false;
+  return { state, corrupt: false };
 };
 
 export const loadState = async (storage: KeyValueStorage): Promise<LoadResult> =>

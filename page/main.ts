@@ -12,6 +12,7 @@ const store = createStore(host);
 
 const handlers = {
   selectProfile: (id: string) => store.selectProfile(id),
+  setShowSessions: (show: boolean) => store.setShowSessions(show),
   createProfile: (name: string) => store.createProfile(name),
   renameProfile: (id: string, name: string) => store.renameProfile(id, name),
   deleteProfile: (id: string) => store.deleteProfile(id),

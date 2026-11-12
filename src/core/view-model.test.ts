@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { addFolder, createProfile, defaultState, setActiveProfile } from './profiles.ts';
+import { addFolder, createProfile, defaultState, setActiveProfile, setShowSessions } from './profiles.ts';
 import type { Project, Session, Worktree } from './types.ts';
 import { buildViewModel, SESSION_CAP } from './view-model.ts';
 
@@ -123,5 +123,11 @@ describe('view model', () => {
     const vm = buildViewModel({ state, projects, worktrees, sessions: {} });
     expect(vm.pickable.map((p) => p.projectId)).toEqual(['p2', 'p3']);
     expect(vm.unassigned.map((p) => p.projectId)).toEqual(['p3']);
+  });
+
+  test('showSessions defaults to true and follows the state', () => {
+    const s = stateWith(['/work/api']);
+    expect(buildViewModel({ state: s, projects, worktrees, sessions: {} }).showSessions).toBe(true);
+    expect(buildViewModel({ state: setShowSessions(s, false), projects, worktrees, sessions: {} }).showSessions).toBe(false);
   });
 });

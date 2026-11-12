@@ -29,6 +29,8 @@ export type ViewModel = {
   profiles: { id: string; name: string; folderCount: number; active: boolean }[];
   activeProfile: { id: string; name: string; folders: FolderView[] };
   unassigned: UnassignedView[];
+  /** Whether the views list sessions under each folder. */
+  showSessions: boolean;
 };
 
 export type ViewInput = {
@@ -104,5 +106,6 @@ export const buildViewModel = (input: ViewInput): ViewModel => {
     activeProfile: { id: active.id, name: active.name, folders: active.folders.map((f) => buildFolder(f, input)) },
     unassigned: projectsNotIn(input, state.profiles.flatMap((p) => p.folders)),
     pickable: projectsNotIn(input, active.folders),
+    showSessions: state.showSessions !== false,
   };
 };
