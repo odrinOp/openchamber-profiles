@@ -35,8 +35,8 @@ describe('view model', () => {
       sessions: {},
     });
     const [a, b] = vm.activeProfile.folders;
-    expect(a).toMatchObject({ kind: 'registered', project: { id: 'p1', name: 'api' } });
-    expect(b).toMatchObject({ kind: 'not-added', project: null, sessions: [] });
+    expect(a).toMatchObject({ kind: 'registered', via: 'project', project: { id: 'p1', name: 'api' } });
+    expect(b).toMatchObject({ kind: 'not-added', via: null, project: null, sessions: [] });
   });
 
   test('a folder that is a worktree matches its project and only shows sessions from it', () => {
@@ -53,6 +53,7 @@ describe('view model', () => {
     });
     const folder = vm.activeProfile.folders[0]!;
     expect(folder.project?.id).toBe('p1');
+    expect(folder.via).toBe('worktree');
     expect(folder.sessions.map((s) => s.id)).toEqual(['wt']);
   });
 

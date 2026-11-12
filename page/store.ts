@@ -20,6 +20,9 @@ import {
 /** `host` allows 32 subscriptions per iframe: 1 for projects, the rest for sessions. */
 const MAX_SESSION_SUBSCRIPTIONS = 31;
 
+/** `startSession` needs a link on the item it attaches; this is the extension's home. */
+const ITEM_URL = 'https://github.com/odrinOp/openchamber-profiles';
+
 export type StoreState = {
   status: 'loading' | 'ready' | 'error';
   error?: string;
@@ -37,6 +40,9 @@ export type Store = {
   /** Add a folder to a profile (the active one when `profileId` is omitted). */
   addFolder(path: string, profileId?: string): void;
   removeFolder(path: string): void;
+  /** Start a session in the folder's project (in the worktree when the folder is one) and open it. */
+  newSession(path: string): void;
+  openSession(sessionId: string): void;
   dispose(): void;
 };
 
@@ -137,6 +143,34 @@ export const createStore = (host: HostClient): Store => {
     }
   };
 
+  const inFlight = new Set<string>();
+  const newSession = async (path: string) => {
+    const folder = snapshot.vm.activeProfile.folders.find((f) => f.path === path);
+    if (!folder?.project || inFlight.has(path)) return;
+    inFlight.add(path);
+    try {
+      const profile = snapshot.vm.activeProfile;
+      // startSession links an item to the new session; the profile is the item.
+      const result = await host.startSession({
+        providerId: 'profiles',
+        id: `profile:${profile.id}`,
+        title: profile.name,
+        url: ITEM_URL,
+        data: { profileId: profile.id },
+        projectId: folder.project.id,
+        navigation: 'open',
+        ...(folder.via === 'worktree' ? { worktree: { kind: 'existing' as const, directory: folder.path } } : {}),
+      });
+      if (result.sessionId === null) {
+        void host.toast({ kind: 'error', message: `Could not start a session (${result.failure}).` });
+      }
+    } catch (err) {
+      void host.toast({ kind: 'error', message: `Could not start a session: ${message(err)}` });
+    } finally {
+      inFlight.delete(path);
+    }
+  };
+
   // Serialize writes so the last edit always wins.
   let writing: Promise<void> = Promise.resolve();
   const commit = (next: ProfilesState) => {
@@ -188,6 +222,12 @@ export const createStore = (host: HostClient): Store => {
     deleteProfile: (id) => edit((s) => deleteProfile(s, id)),
     addFolder: (path, profileId) => edit((s) => addFolder(s, profileId ?? s.activeId, path)),
     removeFolder: (path) => edit((s) => removeFolder(s, s.activeId, path)),
+    newSession: (path) => void newSession(path),
+    openSession: (sessionId) => {
+      host.openSession(sessionId).catch((err) => {
+        void host.toast({ kind: 'error', message: `Could not open the session: ${message(err)}` });
+      });
+    },
     dispose() {
       disposed = true;
       unsubscribeProjects?.();

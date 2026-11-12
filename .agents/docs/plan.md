@@ -110,7 +110,7 @@ Exact keys confirmed by `openchamber-guest-check`.
 2. **Core + storage** ✅ — profile model, path matching, storage read/write, view-model incl. Unassigned, unit tests (`bun test`).
 3. **Read-only views** (+ minimal "Add to profile"/Remove so it is testable) ✅ — live projects/sessions via subscriptions; page renders the active profile; "not added" state; Unassigned view. *Then: time-boxed spike on approach B.*
 4. **Editing** ✅ — create/rename/delete profile, add/remove folders (picker + typed path), Unassigned → "Add to profile", switch active profile.
-5. **Actions** — New session, Open session.
+5. **Actions** ✅ — New session, Open session.
 6. **Status section + file action** — Work Status section (page logic reused); "Move folder to profile" file action.
 7. **Polish** — empty states, errors (`state: 'error' | 'loading'`), keyboard/theme check, README with screenshots, CI running `openchamber-guest-check`.
 8. **Publish** — commit built `.js`, tag `v0.1.0`, install-by-URL link, optionally submit to the community directory (feedback@openchamber.dev).

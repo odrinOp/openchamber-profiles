@@ -297,6 +297,13 @@ export const VIEW_CSS = `
   white-space: nowrap;
 }
 
+.oc-profiles-worktree-tag {
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 5px;
+  opacity: 0.85;
+}
+
 .oc-profiles-folder-path {
   font-size: 0.75rem;
   font-family: var(--font-mono, var(--oc-mono, monospace));
@@ -398,6 +405,12 @@ export const VIEW_CSS = `
   white-space: nowrap;
   font-weight: 500;
   color: var(--surface-foreground, var(--oc-fg, inherit));
+  cursor: pointer;
+}
+
+.oc-profiles-session-title:hover {
+  text-decoration: underline;
+  color: var(--primary-text, var(--primary, inherit));
 }
 
 .oc-profiles-session-trail {

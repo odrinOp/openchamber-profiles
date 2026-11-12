@@ -17,6 +17,8 @@ const handlers = {
   deleteProfile: (id: string) => store.deleteProfile(id),
   addFolder: (path: string, profileId?: string) => store.addFolder(path, profileId),
   removeFolder: (path: string) => store.removeFolder(path),
+  newSession: (path: string) => store.newSession(path),
+  openSession: (sessionId: string) => store.openSession(sessionId),
 };
 
 const render = () => app.render(store.get(), handlers);

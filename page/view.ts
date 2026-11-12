@@ -44,6 +44,8 @@ export type ViewHandlers = {
   deleteProfile(id: string): void;
   addFolder(path: string, profileId?: string): void; // omit profileId = active profile
   removeFolder(path: string): void; // from the active profile
+  newSession(path: string): void; // folder path (FolderView.path); store starts a session in that folder's project/worktree and opens the chat
+  openSession(sessionId: string): void; // opens the chat; the host closes this page
 };
 
 export type App = {
@@ -117,11 +119,18 @@ type SessionRow = {
   titleEl: HTMLElement;
   badgeHandle: Handle<{ label: string; tone?: Tone }>;
   timeEl: HTMLElement;
+  openButtonHandle: ButtonHandle;
+  setSessionId: (id: string) => void;
 };
 
 const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandlers): FolderCardHandle => {
   const card = document.createElement('div');
   card.className = 'oc-profiles-folder-card';
+
+  let currentFolder = initialFolder;
+  let currentHandlers = initialHandlers;
+  let isStartingSession = false;
+  let startTimerId: ReturnType<typeof setTimeout> | null = null;
 
   // Header
   const header = document.createElement('div');
@@ -139,8 +148,14 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
   const basename = document.createElement('span');
   basename.className = 'oc-profiles-folder-basename';
 
+  const worktreeTag = document.createElement('span');
+  worktreeTag.className = 'oc-sdk-badge oc-profiles-worktree-tag';
+  worktreeTag.textContent = 'worktree';
+  worktreeTag.style.display = 'none';
+
   titleRow.appendChild(statusDot);
   titleRow.appendChild(basename);
+  titleRow.appendChild(worktreeTag);
 
   const pathEl = document.createElement('span');
   pathEl.className = 'oc-profiles-folder-path';
@@ -151,11 +166,35 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
   const actions = document.createElement('div');
   actions.className = 'oc-profiles-folder-actions';
 
-  const removeButton = mountButton(actions, {
+  const newSessionWrap = document.createElement('span');
+  const removeWrap = document.createElement('span');
+  actions.appendChild(newSessionWrap);
+  actions.appendChild(removeWrap);
+
+  const handleNewSession = () => {
+    if (isStartingSession) return;
+    isStartingSession = true;
+    newSessionButton.update({ disabled: true });
+    currentHandlers.newSession(currentFolder.path);
+    startTimerId = setTimeout(() => {
+      isStartingSession = false;
+      startTimerId = null;
+      newSessionButton.update({ disabled: false });
+    }, 3000);
+  };
+
+  const newSessionButton = mountButton(newSessionWrap, {
+    label: 'New session',
+    variant: 'default',
+    size: 'xs',
+    onClick: handleNewSession,
+  });
+
+  const removeButton = mountButton(removeWrap, {
     label: 'Remove',
     variant: 'ghost',
     size: 'xs',
-    onClick: () => initialHandlers.removeFolder(initialFolder.path),
+    onClick: () => currentHandlers.removeFolder(currentFolder.path),
   });
 
   header.appendChild(meta);
@@ -194,6 +233,9 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
   let sessionRows: SessionRow[] = [];
 
   const update = (folder: FolderView, handlers: ViewHandlers) => {
+    currentFolder = folder;
+    currentHandlers = handlers;
+
     // Status dot
     statusDot.dataset.status = folder.attention;
     statusDot.setAttribute('title', `Status: ${folder.attention}`);
@@ -204,6 +246,19 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
     basename.title = folder.path;
     pathEl.textContent = folder.path;
     pathEl.title = folder.path;
+
+    // Worktree badge
+    worktreeTag.style.display = folder.via === 'worktree' ? '' : 'none';
+
+    // New session button visibility and state
+    if (folder.kind === 'registered') {
+      newSessionWrap.style.display = '';
+      newSessionButton.update({
+        disabled: isStartingSession,
+      });
+    } else {
+      newSessionWrap.style.display = 'none';
+    }
 
     // Remove button handler
     removeButton.update({
@@ -256,8 +311,21 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
 
           const actionSlot = document.createElement('div');
           actionSlot.className = 'oc-profiles-session-actions';
-          actionSlot.setAttribute('aria-hidden', 'true');
           trail.appendChild(actionSlot);
+
+          let rowSessionId = '';
+          const openButtonHandle = mountButton(actionSlot, {
+            label: 'Open',
+            variant: 'secondary',
+            size: 'xs',
+            onClick: () => {
+              if (rowSessionId) currentHandlers.openSession(rowSessionId);
+            },
+          });
+
+          sTitle.addEventListener('click', () => {
+            if (rowSessionId) currentHandlers.openSession(rowSessionId);
+          });
 
           rowEl.appendChild(lead);
           rowEl.appendChild(trail);
@@ -268,19 +336,25 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
             titleEl: sTitle,
             badgeHandle,
             timeEl: sTime,
+            openButtonHandle,
+            setSessionId: (id: string) => {
+              rowSessionId = id;
+            },
           });
         }
 
         while (sessionRows.length > folder.sessions.length) {
           const removed = sessionRows.pop()!;
           removed.badgeHandle.dispose();
+          removed.openButtonHandle.dispose();
           removed.element.remove();
         }
 
         folder.sessions.forEach((session, i) => {
           const row = sessionRows[i]!;
+          row.setSessionId(session.id);
           row.titleEl.textContent = session.title || 'Untitled session';
-          row.titleEl.title = session.title || 'Untitled session';
+          row.titleEl.title = `Open session: ${session.title || 'Untitled session'}`;
           const act = formatActivity(session.activity);
           row.badgeHandle.update({ label: act.label, tone: act.tone });
           row.timeEl.textContent = formatRelativeTime(session.updatedAt);
@@ -302,9 +376,15 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
     element: card,
     update,
     dispose: () => {
+      if (startTimerId) {
+        clearTimeout(startTimerId);
+        startTimerId = null;
+      }
+      newSessionButton.dispose();
       removeButton.dispose();
       for (const row of sessionRows) {
         row.badgeHandle.dispose();
+        row.openButtonHandle.dispose();
       }
       sessionRows = [];
       card.remove();

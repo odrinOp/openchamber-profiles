@@ -12,6 +12,8 @@ export type FolderView = {
   /** `registered` folders match a project; `not-added` ones do not. */
   kind: 'registered' | 'not-added';
   project: { id: string; name: string } | null;
+  /** How the folder matched its project: the project's own directory or one of its worktrees. */
+  via: 'project' | 'worktree' | null;
   /** Newest first, capped at SESSION_CAP. */
   sessions: SessionView[];
   /** Sessions beyond the cap. */
@@ -62,7 +64,7 @@ const matchFolder = (path: string, input: ViewInput): Match | null => {
 const buildFolder = (path: string, input: ViewInput): FolderView => {
   const match = matchFolder(path, input);
   if (!match) {
-    return { path, kind: 'not-added', project: null, sessions: [], hiddenSessions: 0, attention: 'idle' };
+    return { path, kind: 'not-added', project: null, via: null, sessions: [], hiddenSessions: 0, attention: 'idle' };
   }
   const all = (input.sessions[match.project.id] ?? [])
     .filter((s) => !s.parentId && !s.archivedAt)
@@ -73,6 +75,7 @@ const buildFolder = (path: string, input: ViewInput): FolderView => {
     path,
     kind: 'registered',
     project: { id: match.project.id, name: match.project.name },
+    via: match.via,
     sessions: all.slice(0, SESSION_CAP).map(({ id, title, updatedAt, activity }) => ({ id, title, updatedAt, activity })),
     hiddenSessions: Math.max(0, all.length - SESSION_CAP),
     attention: attentionOf(all),
