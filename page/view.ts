@@ -1,19 +1,31 @@
-import type { ViewModel, FolderView, UnassignedView, Activity } from '../src/core/index.ts';
+import {
+  isAbsolutePath,
+  type ViewModel,
+  type FolderView,
+  type UnassignedView,
+  type Activity,
+} from '../src/core/index.ts';
 import {
   mountBadge,
   mountBanner,
   mountButton,
   mountEmpty,
   mountList,
+  mountSearchField,
+  mountSelect,
   mountSeparator,
   mountSpinner,
+  mountTextField,
   type BannerHandle,
   type ButtonHandle,
   type EmptyHandle,
   type Handle,
   type ListHandle,
+  type SearchFieldHandle,
+  type SelectHandle,
   type SeparatorHandle,
   type SpinnerHandle,
+  type TextFieldHandle,
   type Tone,
 } from '@openchamber/sdk/ui';
 import { VIEW_CSS } from './view.css.ts';
@@ -27,8 +39,11 @@ export type ViewState = {
 
 export type ViewHandlers = {
   selectProfile(id: string): void;
-  addToActiveProfile(path: string): void; // Unassigned row action
-  removeFolder(path: string): void; // folder card action
+  createProfile(name: string): void; // store selects the new profile afterwards
+  renameProfile(id: string, name: string): void;
+  deleteProfile(id: string): void;
+  addFolder(path: string, profileId?: string): void; // omit profileId = active profile
+  removeFolder(path: string): void; // from the active profile
 };
 
 export type App = {
@@ -218,7 +233,6 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
         emptySessions.style.display = 'none';
         sessionsList.style.display = '';
 
-        // Grow rows if needed
         while (sessionRows.length < folder.sessions.length) {
           const rowEl = document.createElement('div');
           rowEl.className = 'oc-profiles-session-row';
@@ -257,14 +271,12 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
           });
         }
 
-        // Shrink rows if needed
         while (sessionRows.length > folder.sessions.length) {
           const removed = sessionRows.pop()!;
           removed.badgeHandle.dispose();
           removed.element.remove();
         }
 
-        // Update each row
         folder.sessions.forEach((session, i) => {
           const row = sessionRows[i]!;
           row.titleEl.textContent = session.title || 'Untitled session';
@@ -302,13 +314,17 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
 
 type UnassignedCardHandle = {
   element: HTMLElement;
-  update(item: UnassignedView, activeProfileName: string, handlers: ViewHandlers): void;
+  update(
+    item: UnassignedView,
+    profiles: { id: string; name: string; active: boolean }[],
+    handlers: ViewHandlers,
+  ): void;
   dispose(): void;
 };
 
 const createUnassignedCard = (
   initialItem: UnassignedView,
-  initialActiveName: string,
+  initialProfiles: { id: string; name: string; active: boolean }[],
   initialHandlers: ViewHandlers,
 ): UnassignedCardHandle => {
   const card = document.createElement('div');
@@ -329,33 +345,114 @@ const createUnassignedCard = (
   const actions = document.createElement('div');
   actions.className = 'oc-profiles-unassigned-actions';
 
-  const addButton = mountButton(actions, {
-    label: `Add to ${initialActiveName}`,
-    variant: 'secondary',
-    size: 'sm',
-    onClick: () => initialHandlers.addToActiveProfile(initialItem.path),
-  });
-
   card.appendChild(info);
   card.appendChild(actions);
 
-  const update = (item: UnassignedView, activeProfileName: string, handlers: ViewHandlers) => {
+  let singleButton: ButtonHandle | null = null;
+  let profileSelect: SelectHandle | null = null;
+  let multiAddButton: ButtonHandle | null = null;
+  let targetProfileId: string =
+    initialProfiles.find((p) => p.active)?.id ?? initialProfiles[0]?.id ?? '';
+
+  const update = (
+    item: UnassignedView,
+    profiles: { id: string; name: string; active: boolean }[],
+    handlers: ViewHandlers,
+  ) => {
     nameEl.textContent = item.name;
     pathEl.textContent = item.path;
     pathEl.title = item.path;
-    addButton.update({
-      label: `Add to ${activeProfileName}`,
-      onClick: () => handlers.addToActiveProfile(item.path),
-    });
+
+    if (!profiles.some((p) => p.id === targetProfileId)) {
+      targetProfileId = profiles.find((p) => p.active)?.id ?? profiles[0]?.id ?? '';
+    }
+
+    if (profiles.length <= 1) {
+      if (profileSelect) {
+        profileSelect.dispose();
+        profileSelect = null;
+      }
+      if (multiAddButton) {
+        multiAddButton.dispose();
+        multiAddButton = null;
+      }
+
+      const pName = profiles[0]?.name ?? 'profile';
+      const pId = profiles[0]?.id;
+
+      if (!singleButton) {
+        singleButton = mountButton(actions, {
+          label: `Add to ${pName}`,
+          variant: 'secondary',
+          size: 'sm',
+          onClick: () => {
+            if (pId) handlers.addFolder(item.path, pId);
+            else handlers.addFolder(item.path);
+          },
+        });
+      } else {
+        singleButton.update({
+          label: `Add to ${pName}`,
+          onClick: () => {
+            if (pId) handlers.addFolder(item.path, pId);
+            else handlers.addFolder(item.path);
+          },
+        });
+      }
+    } else {
+      if (singleButton) {
+        singleButton.dispose();
+        singleButton = null;
+      }
+
+      const selectOptions = profiles.map((p) => ({
+        id: p.id,
+        label: p.active ? `${p.name} (active)` : p.name,
+      }));
+
+      if (!profileSelect) {
+        profileSelect = mountSelect(actions, {
+          options: selectOptions,
+          value: targetProfileId,
+          onChange: (id) => {
+            targetProfileId = id;
+          },
+        });
+      } else {
+        profileSelect.update({
+          options: selectOptions,
+          value: targetProfileId,
+        });
+      }
+
+      if (!multiAddButton) {
+        multiAddButton = mountButton(actions, {
+          label: 'Add',
+          variant: 'secondary',
+          size: 'sm',
+          onClick: () => {
+            handlers.addFolder(item.path, targetProfileId);
+          },
+        });
+      } else {
+        multiAddButton.update({
+          onClick: () => {
+            handlers.addFolder(item.path, targetProfileId);
+          },
+        });
+      }
+    }
   };
 
-  update(initialItem, initialActiveName, initialHandlers);
+  update(initialItem, initialProfiles, initialHandlers);
 
   return {
     element: card,
     update,
     dispose: () => {
-      addButton.dispose();
+      singleButton?.dispose();
+      profileSelect?.dispose();
+      multiAddButton?.dispose();
       card.remove();
     },
   };
@@ -367,6 +464,23 @@ export const mountApp = (root: HTMLElement): App => {
   let lastState: ViewState | null = null;
   let lastHandlers: ViewHandlers | null = null;
   let currentNav: { kind: 'profile' } | { kind: 'unassigned' } = { kind: 'profile' };
+
+  // Inline editing state
+  let isCreatingProfile = false;
+  let newProfileDraft = '';
+  let newProfileError: string | undefined;
+
+  let isRenamingProfile = false;
+  let renamingProfileId: string | null = null;
+  let renameDraft = '';
+
+  let isConfirmingDelete = false;
+  let deletingProfileId: string | null = null;
+
+  let isAddFolderOpen = false;
+  let searchPickableQuery = '';
+  let typedPathDraft = '';
+  let typedPathError: string | undefined;
 
   while (root.firstChild) {
     root.removeChild(root.firstChild);
@@ -402,23 +516,102 @@ export const mountApp = (root: HTMLElement): App => {
     },
   });
 
-  // Visually reserved spot for "+ New profile" (Milestone 4)
-  const reservedWrap = document.createElement('div');
-  reservedWrap.className = 'oc-profiles-sidebar-reserved';
-  sidebar.appendChild(reservedWrap);
+  // "+ New profile" section
+  const newProfileSection = document.createElement('div');
+  newProfileSection.className = 'oc-profiles-sidebar-action';
+  sidebar.appendChild(newProfileSection);
 
-  const newProfileButton = mountButton(reservedWrap, {
+  const newProfileButtonWrap = document.createElement('div');
+  newProfileSection.appendChild(newProfileButtonWrap);
+
+  const newProfileFormWrap = document.createElement('div');
+  newProfileFormWrap.className = 'oc-profiles-new-profile-form';
+  newProfileFormWrap.style.display = 'none';
+  newProfileSection.appendChild(newProfileFormWrap);
+
+  const newProfileFieldWrap = document.createElement('div');
+  newProfileFormWrap.appendChild(newProfileFieldWrap);
+
+  const newProfileActionsWrap = document.createElement('div');
+  newProfileActionsWrap.className = 'oc-profiles-form-actions';
+  newProfileFormWrap.appendChild(newProfileActionsWrap);
+
+  const submitCreateProfile = () => {
+    const trimmed = newProfileDraft.trim();
+    if (!trimmed) {
+      newProfileError = 'Name cannot be empty';
+      newProfileTextField.update({ error: newProfileError });
+      return;
+    }
+    lastHandlers?.createProfile(trimmed);
+    isCreatingProfile = false;
+    newProfileDraft = '';
+    newProfileError = undefined;
+    if (lastState && lastHandlers) {
+      render(lastState, lastHandlers);
+    }
+  };
+
+  const cancelCreateProfile = () => {
+    isCreatingProfile = false;
+    newProfileDraft = '';
+    newProfileError = undefined;
+    if (lastState && lastHandlers) {
+      render(lastState, lastHandlers);
+    }
+  };
+
+  const newProfileButton = mountButton(newProfileButtonWrap, {
     label: '+ New profile',
     variant: 'ghost',
     size: 'sm',
-    disabled: true,
-    onClick: () => {},
+    onClick: () => {
+      isCreatingProfile = true;
+      newProfileDraft = '';
+      newProfileError = undefined;
+      if (lastState && lastHandlers) {
+        render(lastState, lastHandlers);
+      }
+      const inp = newProfileFormWrap.querySelector('input');
+      inp?.focus();
+    },
   });
 
-  const reservedHint = document.createElement('span');
-  reservedHint.className = 'oc-profiles-sidebar-reserved-hint';
-  reservedHint.textContent = 'New profile coming in M4';
-  reservedWrap.appendChild(reservedHint);
+  const newProfileTextField = mountTextField(newProfileFieldWrap, {
+    placeholder: 'Profile name',
+    value: '',
+    onChange: (val) => {
+      newProfileDraft = val;
+      newProfileError = undefined;
+      newProfileTextField.update({ value: val, error: undefined });
+      newProfileCreateBtn.update({ disabled: !val.trim() });
+    },
+  });
+
+  const newProfileCreateBtn = mountButton(newProfileActionsWrap, {
+    label: 'Create',
+    variant: 'default',
+    size: 'xs',
+    disabled: true,
+    onClick: submitCreateProfile,
+  });
+
+  const newProfileCancelBtn = mountButton(newProfileActionsWrap, {
+    label: 'Cancel',
+    variant: 'ghost',
+    size: 'xs',
+    onClick: cancelCreateProfile,
+  });
+
+  newProfileFormWrap.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitCreateProfile();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelCreateProfile();
+    }
+  });
 
   const sepWrap = document.createElement('div');
   sidebar.appendChild(sepWrap);
@@ -446,13 +639,330 @@ export const mountApp = (root: HTMLElement): App => {
 
   const mainHeader = document.createElement('header');
   mainHeader.className = 'oc-profiles-main-header';
+  main.appendChild(mainHeader);
+
+  const headerTop = document.createElement('div');
+  headerTop.className = 'oc-profiles-header-top';
+  mainHeader.appendChild(headerTop);
+
+  const headerTitleRow = document.createElement('div');
+  headerTitleRow.className = 'oc-profiles-header-title-row';
+  headerTop.appendChild(headerTitleRow);
+
   const mainTitle = document.createElement('h1');
   mainTitle.className = 'oc-profiles-main-title';
+  headerTitleRow.appendChild(mainTitle);
+
+  // Rename form container
+  const renameForm = document.createElement('div');
+  renameForm.className = 'oc-profiles-rename-form';
+  renameForm.style.display = 'none';
+  headerTitleRow.appendChild(renameForm);
+
+  const renameInput = document.createElement('input');
+  renameInput.type = 'text';
+  renameInput.className = 'oc-sdk-input';
+  renameInput.placeholder = 'Profile name';
+  renameForm.appendChild(renameInput);
+
+  const renameActions = document.createElement('div');
+  renameActions.className = 'oc-profiles-form-actions';
+  renameForm.appendChild(renameActions);
+
+  const submitRename = () => {
+    const trimmed = renameDraft.trim();
+    if (trimmed && renamingProfileId) {
+      lastHandlers?.renameProfile(renamingProfileId, trimmed);
+    }
+    isRenamingProfile = false;
+    renamingProfileId = null;
+    if (lastState && lastHandlers) {
+      render(lastState, lastHandlers);
+    }
+  };
+
+  const cancelRename = () => {
+    isRenamingProfile = false;
+    renamingProfileId = null;
+    if (lastState && lastHandlers) {
+      render(lastState, lastHandlers);
+    }
+  };
+
+  const renameSaveBtn = mountButton(renameActions, {
+    label: 'Save',
+    variant: 'default',
+    size: 'xs',
+    onClick: submitRename,
+  });
+
+  const renameCancelBtn = mountButton(renameActions, {
+    label: 'Cancel',
+    variant: 'ghost',
+    size: 'xs',
+    onClick: cancelRename,
+  });
+
+  renameInput.addEventListener('input', () => {
+    renameDraft = renameInput.value;
+    renameSaveBtn.update({ disabled: !renameDraft.trim() });
+  });
+
+  renameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitRename();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelRename();
+    }
+  });
+
+  // Header actions (Rename, Delete, Add Folder)
+  const headerActions = document.createElement('div');
+  headerActions.className = 'oc-profiles-header-actions';
+  headerTop.appendChild(headerActions);
+
+  const renameBtn = mountButton(headerActions, {
+    label: 'Rename',
+    variant: 'ghost',
+    size: 'xs',
+    onClick: () => {
+      if (!lastState) return;
+      isRenamingProfile = true;
+      renamingProfileId = lastState.vm.activeProfile.id;
+      renameDraft = lastState.vm.activeProfile.name;
+      renameInput.value = renameDraft;
+      isConfirmingDelete = false;
+      render(lastState, lastHandlers!);
+      renameInput.focus();
+      renameInput.select();
+    },
+  });
+
+  const deleteBtn = mountButton(headerActions, {
+    label: 'Delete',
+    variant: 'ghost',
+    size: 'xs',
+    onClick: () => {
+      if (!lastState) return;
+      isConfirmingDelete = true;
+      deletingProfileId = lastState.vm.activeProfile.id;
+      isRenamingProfile = false;
+      render(lastState, lastHandlers!);
+    },
+  });
+
+  const addFolderBtn = mountButton(headerActions, {
+    label: '+ Add folder',
+    variant: 'secondary',
+    size: 'sm',
+    onClick: () => {
+      isAddFolderOpen = !isAddFolderOpen;
+      if (lastState && lastHandlers) {
+        render(lastState, lastHandlers);
+      }
+    },
+  });
+
   const mainSubtitle = document.createElement('p');
   mainSubtitle.className = 'oc-profiles-main-subtitle';
-  mainHeader.appendChild(mainTitle);
   mainHeader.appendChild(mainSubtitle);
-  main.appendChild(mainHeader);
+
+  // Delete confirmation box
+  const deleteConfirmBox = document.createElement('div');
+  deleteConfirmBox.className = 'oc-profiles-delete-confirm';
+  deleteConfirmBox.style.display = 'none';
+  mainHeader.appendChild(deleteConfirmBox);
+
+  const deleteConfirmText = document.createElement('p');
+  deleteConfirmText.className = 'oc-profiles-delete-confirm-text';
+  deleteConfirmBox.appendChild(deleteConfirmText);
+
+  const deleteConfirmActions = document.createElement('div');
+  deleteConfirmActions.className = 'oc-profiles-form-actions';
+  deleteConfirmBox.appendChild(deleteConfirmActions);
+
+  const deleteConfirmBtn = mountButton(deleteConfirmActions, {
+    label: 'Delete profile',
+    variant: 'destructive',
+    size: 'xs',
+    onClick: () => {
+      if (deletingProfileId && lastHandlers) {
+        lastHandlers.deleteProfile(deletingProfileId);
+      }
+      isConfirmingDelete = false;
+      deletingProfileId = null;
+      if (lastState && lastHandlers) {
+        render(lastState, lastHandlers);
+      }
+    },
+  });
+
+  const deleteCancelBtn = mountButton(deleteConfirmActions, {
+    label: 'Cancel',
+    variant: 'ghost',
+    size: 'xs',
+    onClick: () => {
+      isConfirmingDelete = false;
+      deletingProfileId = null;
+      if (lastState && lastHandlers) {
+        render(lastState, lastHandlers);
+      }
+    },
+  });
+
+  // Add folder panel
+  const addFolderPanel = document.createElement('div');
+  addFolderPanel.className = 'oc-profiles-add-panel';
+  addFolderPanel.style.display = 'none';
+  main.appendChild(addFolderPanel);
+
+  const addFolderPanelHeader = document.createElement('div');
+  addFolderPanelHeader.className = 'oc-profiles-add-panel-header';
+  addFolderPanel.appendChild(addFolderPanelHeader);
+
+  const addFolderPanelTitle = document.createElement('h3');
+  addFolderPanelTitle.className = 'oc-profiles-add-panel-title';
+  addFolderPanelHeader.appendChild(addFolderPanelTitle);
+
+  const closeAddFolderPanel = () => {
+    isAddFolderOpen = false;
+    searchPickableQuery = '';
+    typedPathDraft = '';
+    typedPathError = undefined;
+    if (lastState && lastHandlers) {
+      render(lastState, lastHandlers);
+    }
+  };
+
+  const addFolderCloseBtn = mountButton(addFolderPanelHeader, {
+    label: 'Cancel',
+    variant: 'ghost',
+    size: 'xs',
+    onClick: closeAddFolderPanel,
+  });
+
+  // Section (a): Registered projects
+  const pickableSection = document.createElement('div');
+  pickableSection.className = 'oc-profiles-add-section';
+  addFolderPanel.appendChild(pickableSection);
+
+  const pickableLabel = document.createElement('span');
+  pickableLabel.className = 'oc-profiles-add-section-label';
+  pickableLabel.textContent = 'Registered projects';
+  pickableSection.appendChild(pickableLabel);
+
+  const pickableSearchWrap = document.createElement('div');
+  pickableSection.appendChild(pickableSearchWrap);
+
+  const addFolderSearch = mountSearchField(pickableSearchWrap, {
+    placeholder: 'Filter projects…',
+    value: '',
+    onChange: (val) => {
+      searchPickableQuery = val;
+      if (lastState && lastHandlers) {
+        updatePickableList(lastState, lastHandlers);
+      }
+    },
+  });
+
+  const pickableListWrap = document.createElement('div');
+  pickableListWrap.className = 'oc-profiles-pickable-list-wrap';
+  pickableSection.appendChild(pickableListWrap);
+
+  const addFolderList = mountList(pickableListWrap, {
+    items: [],
+    emptyText: 'No matching projects',
+    onSelect: (path: string) => {
+      lastHandlers?.addFolder(path);
+      closeAddFolderPanel();
+    },
+  });
+
+  const pickableEmptyHint = document.createElement('p');
+  pickableEmptyHint.className = 'oc-profiles-empty-hint';
+  pickableEmptyHint.textContent = 'All registered projects are already in this profile';
+  pickableEmptyHint.style.display = 'none';
+  pickableSection.appendChild(pickableEmptyHint);
+
+  const addFolderSepWrap = document.createElement('div');
+  addFolderPanel.appendChild(addFolderSepWrap);
+  const addFolderSep = mountSeparator(addFolderSepWrap, { label: 'or' });
+
+  // Section (b): Typed path
+  const typedSection = document.createElement('div');
+  typedSection.className = 'oc-profiles-add-section';
+  addFolderPanel.appendChild(typedSection);
+
+  const typedRow = document.createElement('div');
+  typedRow.className = 'oc-profiles-typed-row';
+  typedSection.appendChild(typedRow);
+
+  const typedFieldWrap = document.createElement('div');
+  typedRow.appendChild(typedFieldWrap);
+
+  const submitTypedPath = () => {
+    const trimmed = typedPathDraft.trim();
+    if (!isAbsolutePath(trimmed)) {
+      typedPathError = 'Use an absolute path, e.g. /Users/me/project';
+      addFolderTypedField.update({ error: typedPathError });
+      return;
+    }
+    lastHandlers?.addFolder(trimmed);
+    closeAddFolderPanel();
+  };
+
+  const addFolderTypedField = mountTextField(typedFieldWrap, {
+    label: 'Or type a folder path',
+    placeholder: '/path/to/folder or C:\\path\\to\\folder',
+    mono: true,
+    value: '',
+    onChange: (val) => {
+      typedPathDraft = val;
+      typedPathError = undefined;
+      addFolderTypedField.update({ value: val, error: undefined });
+    },
+  });
+
+  typedFieldWrap.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitTypedPath();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeAddFolderPanel();
+    }
+  });
+
+  const addFolderTypedBtn = mountButton(typedRow, {
+    label: 'Add path',
+    variant: 'secondary',
+    size: 'sm',
+    onClick: submitTypedPath,
+  });
+
+  const updatePickableList = (state: ViewState, _handlers: ViewHandlers) => {
+    const q = searchPickableQuery.trim().toLowerCase();
+    const items = state.vm.pickable
+      .filter((p) => !q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q))
+      .map((p) => ({
+        id: p.path,
+        title: p.name,
+        subtitle: p.path,
+      }));
+
+    if (state.vm.pickable.length === 0) {
+      pickableSearchWrap.style.display = 'none';
+      pickableListWrap.style.display = 'none';
+      pickableEmptyHint.style.display = '';
+    } else {
+      pickableSearchWrap.style.display = '';
+      pickableListWrap.style.display = '';
+      pickableEmptyHint.style.display = 'none';
+      addFolderList.update({ items });
+    }
+  };
 
   const bannerSlot = document.createElement('div');
   bannerSlot.className = 'oc-profiles-banner-slot';
@@ -474,6 +984,16 @@ export const mountApp = (root: HTMLElement): App => {
   const render = (state: ViewState, handlers: ViewHandlers) => {
     lastState = state;
     lastHandlers = handlers;
+
+    // Reset profile-specific editing states if active profile changed
+    if (renamingProfileId && renamingProfileId !== state.vm.activeProfile.id) {
+      isRenamingProfile = false;
+      renamingProfileId = null;
+    }
+    if (deletingProfileId && deletingProfileId !== state.vm.activeProfile.id) {
+      isConfirmingDelete = false;
+      deletingProfileId = null;
+    }
 
     // 1. Corrupt state banner
     if (state.corrupt) {
@@ -523,6 +1043,17 @@ export const mountApp = (root: HTMLElement): App => {
       selectedId: currentNav.kind === 'profile' ? state.vm.activeProfile.id : null,
     });
 
+    // New profile form toggle
+    if (isCreatingProfile) {
+      newProfileButtonWrap.style.display = 'none';
+      newProfileFormWrap.style.display = '';
+      newProfileTextField.update({ value: newProfileDraft, error: newProfileError });
+      newProfileCreateBtn.update({ disabled: !newProfileDraft.trim() });
+    } else {
+      newProfileButtonWrap.style.display = '';
+      newProfileFormWrap.style.display = 'none';
+    }
+
     unassignedList.update({
       items: [
         {
@@ -541,7 +1072,6 @@ export const mountApp = (root: HTMLElement): App => {
           label: 'Loading profiles and projects…',
         });
       }
-      // Hide cards and empties while loading
       for (const card of folderCardPool.values()) card.element.style.display = 'none';
       for (const card of unassignedCardPool.values()) card.element.style.display = 'none';
       if (emptyProfileHandle) {
@@ -554,6 +1084,8 @@ export const mountApp = (root: HTMLElement): App => {
       }
       mainTitle.textContent = 'Loading…';
       mainSubtitle.textContent = '';
+      headerActions.style.display = 'none';
+      addFolderPanel.style.display = 'none';
       return;
     }
 
@@ -565,9 +1097,49 @@ export const mountApp = (root: HTMLElement): App => {
     // 5. Profile view
     if (currentNav.kind === 'profile') {
       const active = state.vm.activeProfile;
-      mainTitle.textContent = active.name;
+      headerActions.style.display = '';
+
+      // Inline rename UI
+      if (isRenamingProfile && renamingProfileId === active.id) {
+        mainTitle.style.display = 'none';
+        renameForm.style.display = '';
+        renameSaveBtn.update({ disabled: !renameDraft.trim() });
+        renameBtn.update({ disabled: true });
+        deleteBtn.update({ disabled: true });
+      } else {
+        mainTitle.style.display = '';
+        mainTitle.textContent = active.name;
+        renameForm.style.display = 'none';
+        renameBtn.update({ disabled: false });
+        deleteBtn.update({ disabled: false });
+      }
+
+      // Inline delete confirmation UI
+      if (isConfirmingDelete && deletingProfileId === active.id) {
+        deleteConfirmBox.style.display = '';
+        const isOnlyProfile = state.vm.profiles.length === 1;
+        deleteConfirmText.textContent = isOnlyProfile
+          ? `Delete "${active.name}"? Its folders move to Unassigned unless another profile holds them. Projects aren't touched. This is your last profile, so it will reset to an empty Default profile.`
+          : `Delete "${active.name}"? Its folders move to Unassigned unless another profile holds them. Projects aren't touched.`;
+      } else {
+        deleteConfirmBox.style.display = 'none';
+      }
+
       const count = active.folders.length;
       mainSubtitle.textContent = `${count} ${count === 1 ? 'project folder' : 'project folders'}`;
+
+      // Add folder panel
+      if (isAddFolderOpen) {
+        addFolderPanel.style.display = '';
+        addFolderPanelTitle.textContent = `Add folder to ${active.name}`;
+        addFolderBtn.update({ label: '✕ Close add' });
+        addFolderSearch.update({ value: searchPickableQuery });
+        updatePickableList(state, handlers);
+        addFolderTypedField.update({ value: typedPathDraft, error: typedPathError });
+      } else {
+        addFolderPanel.style.display = 'none';
+        addFolderBtn.update({ label: '+ Add folder' });
+      }
 
       // Dispose unassigned cards and empty unassigned
       for (const card of unassignedCardPool.values()) {
@@ -580,7 +1152,6 @@ export const mountApp = (root: HTMLElement): App => {
       }
 
       if (count === 0) {
-        // Dispose any active folder cards
         for (const card of folderCardPool.values()) {
           card.dispose();
         }
@@ -588,17 +1159,14 @@ export const mountApp = (root: HTMLElement): App => {
 
         const emptyProps = {
           title: 'No folders yet',
-          body: 'Add some from Unassigned.',
-          action:
-            state.vm.unassigned.length > 0
-              ? {
-                  label: 'View Unassigned',
-                  onClick: () => {
-                    currentNav = { kind: 'unassigned' };
-                    render(state, handlers);
-                  },
-                }
-              : undefined,
+          body: 'Add some from Unassigned or choose a project above.',
+          action: {
+            label: '+ Add folder',
+            onClick: () => {
+              isAddFolderOpen = true;
+              render(state, handlers);
+            },
+          },
         };
 
         if (!emptyProfileHandle) {
@@ -637,11 +1205,16 @@ export const mountApp = (root: HTMLElement): App => {
 
     // 6. Unassigned view
     if (currentNav.kind === 'unassigned') {
+      mainTitle.style.display = '';
       mainTitle.textContent = 'Unassigned projects';
+      renameForm.style.display = 'none';
+      deleteConfirmBox.style.display = 'none';
+      headerActions.style.display = 'none';
+      addFolderPanel.style.display = 'none';
+
       const uCount = state.vm.unassigned.length;
       mainSubtitle.textContent = `Projects in OpenChamber not included in any profile (${uCount})`;
 
-      // Dispose folder cards and empty profile
       for (const card of folderCardPool.values()) {
         card.dispose();
       }
@@ -684,11 +1257,11 @@ export const mountApp = (root: HTMLElement): App => {
         for (const item of state.vm.unassigned) {
           let card = unassignedCardPool.get(item.path);
           if (!card) {
-            card = createUnassignedCard(item, state.vm.activeProfile.name, handlers);
+            card = createUnassignedCard(item, state.vm.profiles, handlers);
             unassignedCardPool.set(item.path, card);
           } else {
             card.element.style.display = '';
-            card.update(item, state.vm.activeProfile.name, handlers);
+            card.update(item, state.vm.profiles, handlers);
           }
           contentArea.appendChild(card.element);
         }
@@ -701,8 +1274,26 @@ export const mountApp = (root: HTMLElement): App => {
     dispose: () => {
       profilesList.dispose();
       newProfileButton.dispose();
+      newProfileTextField.dispose();
+      newProfileCreateBtn.dispose();
+      newProfileCancelBtn.dispose();
       sep.dispose();
       unassignedList.dispose();
+
+      renameSaveBtn.dispose();
+      renameCancelBtn.dispose();
+      renameBtn.dispose();
+      deleteBtn.dispose();
+      addFolderBtn.dispose();
+      deleteConfirmBtn.dispose();
+      deleteCancelBtn.dispose();
+
+      addFolderCloseBtn.dispose();
+      addFolderSearch.dispose();
+      addFolderList.dispose();
+      addFolderSep.dispose();
+      addFolderTypedField.dispose();
+      addFolderTypedBtn.dispose();
 
       if (corruptBanner) {
         corruptBanner.dispose();

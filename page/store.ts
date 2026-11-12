@@ -2,6 +2,9 @@ import type { HostClient } from '@openchamber/sdk';
 import {
   addFolder,
   buildViewModel,
+  createProfile,
+  deleteProfile,
+  renameProfile,
   loadState,
   removeFolder,
   saveState,
@@ -28,7 +31,11 @@ export type Store = {
   get(): StoreState;
   subscribe(listener: () => void): () => void;
   selectProfile(id: string): void;
-  addToActiveProfile(path: string): void;
+  createProfile(name: string): void;
+  renameProfile(id: string, name: string): void;
+  deleteProfile(id: string): void;
+  /** Add a folder to a profile (the active one when `profileId` is omitted). */
+  addFolder(path: string, profileId?: string): void;
   removeFolder(path: string): void;
   dispose(): void;
 };
@@ -121,6 +128,15 @@ export const createStore = (host: HostClient): Store => {
     emit();
   };
 
+  /** Run a core edit. Invalid input becomes a toast, never a crash. */
+  const edit = (change: (state: ProfilesState) => ProfilesState) => {
+    try {
+      commit(change(persisted));
+    } catch (err) {
+      void host.toast({ kind: 'error', message: message(err) });
+    }
+  };
+
   // Serialize writes so the last edit always wins.
   let writing: Promise<void> = Promise.resolve();
   const commit = (next: ProfilesState) => {
@@ -163,9 +179,15 @@ export const createStore = (host: HostClient): Store => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    selectProfile: (id) => commit(setActiveProfile(persisted, id)),
-    addToActiveProfile: (path) => commit(addFolder(persisted, persisted.activeId, path)),
-    removeFolder: (path) => commit(removeFolder(persisted, persisted.activeId, path)),
+    selectProfile: (id) => edit((s) => setActiveProfile(s, id)),
+    createProfile: (name) => edit((s) => {
+      const next = createProfile(s, name);
+      return setActiveProfile(next, next.profiles[next.profiles.length - 1]!.id);
+    }),
+    renameProfile: (id, name) => edit((s) => renameProfile(s, id, name)),
+    deleteProfile: (id) => edit((s) => deleteProfile(s, id)),
+    addFolder: (path, profileId) => edit((s) => addFolder(s, profileId ?? s.activeId, path)),
+    removeFolder: (path) => edit((s) => removeFolder(s, s.activeId, path)),
     dispose() {
       disposed = true;
       unsubscribeProjects?.();

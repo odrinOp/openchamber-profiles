@@ -114,4 +114,13 @@ describe('view model', () => {
       { id: 'work', name: 'Work', folderCount: 1, active: true },
     ]);
   });
+
+  test('pickable lists projects missing from the active profile, even if another profile has them', () => {
+    let state = createProfile(defaultState(), 'Work');
+    state = addFolder(addFolder(state, 'default', '/me/blog'), 'work', '/work/api');
+    state = setActiveProfile(state, 'work');
+    const vm = buildViewModel({ state, projects, worktrees, sessions: {} });
+    expect(vm.pickable.map((p) => p.projectId)).toEqual(['p2', 'p3']);
+    expect(vm.unassigned.map((p) => p.projectId)).toEqual(['p3']);
+  });
 });

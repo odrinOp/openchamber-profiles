@@ -12,7 +12,10 @@ const store = createStore(host);
 
 const handlers = {
   selectProfile: (id: string) => store.selectProfile(id),
-  addToActiveProfile: (path: string) => store.addToActiveProfile(path),
+  createProfile: (name: string) => store.createProfile(name),
+  renameProfile: (id: string, name: string) => store.renameProfile(id, name),
+  deleteProfile: (id: string) => store.deleteProfile(id),
+  addFolder: (path: string, profileId?: string) => store.addFolder(path, profileId),
   removeFolder: (path: string) => store.removeFolder(path),
 };
 

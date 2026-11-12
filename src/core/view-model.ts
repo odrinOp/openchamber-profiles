@@ -22,6 +22,8 @@ export type FolderView = {
 export type UnassignedView = { projectId: string; name: string; path: string };
 
 export type ViewModel = {
+  /** Registered projects the active profile does not cover yet: the folder picker's options. */
+  pickable: UnassignedView[];
   profiles: { id: string; name: string; folderCount: number; active: boolean }[];
   activeProfile: { id: string; name: string; folders: FolderView[] };
   unassigned: UnassignedView[];
@@ -77,16 +79,14 @@ const buildFolder = (path: string, input: ViewInput): FolderView => {
   };
 };
 
-/** Projects that no profile covers, directly or through one of their worktrees. */
-const buildUnassigned = (input: ViewInput): UnassignedView[] => {
-  const folders = input.state.profiles.flatMap((p) => p.folders);
-  return input.projects
+/** Projects none of `folders` covers, directly or through one of their worktrees. */
+const projectsNotIn = (input: ViewInput, folders: string[]): UnassignedView[] =>
+  input.projects
     .filter((project) => {
       const dirs = [project.directory, ...(input.worktrees[project.id] ?? []).map((w) => w.directory)];
       return !folders.some((f) => dirs.some((d) => samePath(f, d)));
     })
     .map((project) => ({ projectId: project.id, name: project.name, path: project.directory }));
-};
 
 export const buildViewModel = (input: ViewInput): ViewModel => {
   const { state } = input;
@@ -99,6 +99,7 @@ export const buildViewModel = (input: ViewInput): ViewModel => {
       active: p.id === active.id,
     })),
     activeProfile: { id: active.id, name: active.name, folders: active.folders.map((f) => buildFolder(f, input)) },
-    unassigned: buildUnassigned(input),
+    unassigned: projectsNotIn(input, state.profiles.flatMap((p) => p.folders)),
+    pickable: projectsNotIn(input, active.folders),
   };
 };

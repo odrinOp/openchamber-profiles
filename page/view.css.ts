@@ -60,17 +60,28 @@ export const VIEW_CSS = `
   gap: 4px;
 }
 
-.oc-profiles-sidebar-reserved {
+/* New Profile inline form in sidebar */
+.oc-profiles-sidebar-action {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   padding: 0 2px;
 }
 
-.oc-profiles-sidebar-reserved-hint {
-  font-size: 0.7rem;
-  color: var(--surface-muted-foreground, var(--oc-muted, #888));
-  padding: 0 8px;
+.oc-profiles-new-profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius, 9px);
+  background: var(--surface-elevated, var(--oc-elevated, rgba(128, 128, 128, 0.04)));
+  border: 1px solid var(--interactive-border, var(--oc-border, rgba(128, 128, 128, 0.2)));
+}
+
+.oc-profiles-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* Main Area */
@@ -87,7 +98,28 @@ export const VIEW_CSS = `
 .oc-profiles-main-header {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+}
+
+.oc-profiles-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.oc-profiles-header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.oc-profiles-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .oc-profiles-main-title {
@@ -103,6 +135,102 @@ export const VIEW_CSS = `
   font-size: 0.8125rem;
   color: var(--surface-muted-foreground, var(--oc-muted, #888));
   margin: 0;
+}
+
+/* Inline rename form */
+.oc-profiles-rename-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.oc-profiles-rename-form .oc-sdk-input {
+  height: 28px;
+  font-size: 1rem;
+  font-weight: 600;
+  max-width: 320px;
+}
+
+/* Inline delete confirmation */
+.oc-profiles-delete-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius, 10px);
+  background: color-mix(in srgb, var(--status-error, var(--oc-error, #ef4444)) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-error, var(--oc-error, #ef4444)) 22%, transparent);
+}
+
+.oc-profiles-delete-confirm-text {
+  font-size: 0.8125rem;
+  color: var(--surface-foreground, var(--oc-fg, inherit));
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* Add folder panel */
+.oc-profiles-add-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--radius, 10px);
+  background: var(--surface-elevated, var(--oc-elevated, rgba(128, 128, 128, 0.04)));
+  border: 1px solid var(--interactive-border, var(--oc-border, rgba(128, 128, 128, 0.2)));
+  box-shadow: var(--oc-sdk-raised-lift, 0 1px 1.5px 0 rgb(0 0 0 / 0.06));
+}
+
+.oc-profiles-add-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.oc-profiles-add-panel-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.oc-profiles-add-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oc-profiles-add-section-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--surface-muted-foreground, var(--oc-muted, #888));
+}
+
+.oc-profiles-pickable-list-wrap {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--interactive-border, var(--oc-border, rgba(128, 128, 128, 0.16)));
+  border-radius: calc(var(--radius, 9px) - 2px);
+  padding: 2px;
+}
+
+.oc-profiles-empty-hint {
+  font-size: 0.8125rem;
+  color: var(--surface-muted-foreground, var(--oc-muted, #888));
+  margin: 0;
+  padding: 6px 2px;
+}
+
+.oc-profiles-typed-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.oc-profiles-typed-row .oc-sdk-field {
+  flex: 1 1 auto;
 }
 
 .oc-profiles-banner-slot {
@@ -342,6 +470,9 @@ export const VIEW_CSS = `
 }
 
 .oc-profiles-unassigned-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -363,6 +494,25 @@ export const VIEW_CSS = `
   .oc-profiles-main {
     padding: 16px;
     gap: 16px;
+  }
+
+  .oc-profiles-header-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .oc-profiles-typed-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .oc-profiles-unassigned-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .oc-profiles-unassigned-actions {
+    justify-content: flex-end;
   }
 }
 `;
