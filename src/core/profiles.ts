@@ -1,12 +1,13 @@
 import { isAbsolutePath, normalizePath, samePath } from './path.ts';
-import type { Profile, ProfilesState } from './types.ts';
+import type { Profile, ProfilesState, SessionMode } from './types.ts';
 
 export const DEFAULT_PROFILE_ID = 'default';
 
-export const setShowSessions = (state: ProfilesState, show: boolean): ProfilesState => {
-  const { showSessions: _omit, ...rest } = state;
-  return show ? rest : { ...rest, showSessions: false };
-};
+export const setSessionMode = (state: ProfilesState, id: string, mode: SessionMode): ProfilesState =>
+  mapProfile(state, id, (p) => {
+    const { sessionMode: _omit, ...rest } = p;
+    return mode === 'all' ? rest : { ...rest, sessionMode: mode };
+  });
 
 export const defaultState = (): ProfilesState => ({
   version: 1,

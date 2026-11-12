@@ -2,6 +2,7 @@ export const VIEW_CSS = `
 /* Layout container */
 .oc-profiles-app {
   display: flex;
+  flex-direction: column;
   width: 100vw;
   height: 100vh;
   box-sizing: border-box;
@@ -17,6 +18,80 @@ export const VIEW_CSS = `
 .oc-profiles-app *::before,
 .oc-profiles-app *::after {
   box-sizing: border-box;
+}
+
+/* Top bar */
+.oc-profiles-topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 32px;
+  border-bottom: 1px solid var(--interactive-border, var(--oc-border, rgba(128, 128, 128, 0.18)));
+}
+
+.oc-profiles-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.oc-profiles-banner-slot {
+  padding: 0 32px;
+}
+
+.oc-profiles-banner-slot:not(:empty) {
+  padding-top: 12px;
+}
+
+.oc-profiles-projects-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.oc-profiles-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.oc-profiles-toolbar-item {
+  min-width: 0;
+}
+
+.oc-profiles-settings-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.oc-profiles-section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--surface-muted-foreground, var(--oc-muted, #888));
+  margin-top: 4px;
+}
+
+.oc-profiles-config-row {
+  border: 1px solid var(--interactive-border, var(--oc-border, rgba(128, 128, 128, 0.18)));
+  border-radius: var(--radius, 10px);
+  background: var(--surface-elevated, var(--oc-elevated, rgba(128, 128, 128, 0.03)));
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 /* Sidebar (Left Column) */
@@ -493,6 +568,17 @@ export const VIEW_CSS = `
 @media (max-width: 640px) {
   .oc-profiles-app {
     flex-direction: column;
+  }
+
+  .oc-profiles-settings-view {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .oc-profiles-topbar,
+  .oc-profiles-projects-view {
+    padding-left: 16px;
+    padding-right: 16px;
   }
 
   .oc-profiles-sidebar {

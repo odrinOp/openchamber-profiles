@@ -1,5 +1,5 @@
 import { samePath } from './path.ts';
-import type { Activity, Project, ProfilesState, Session, Worktree } from './types.ts';
+import type { Activity, Project, ProfilesState, Session, SessionMode, Worktree } from './types.ts';
 
 export const SESSION_CAP = 20;
 
@@ -14,10 +14,14 @@ export type FolderView = {
   project: { id: string; name: string } | null;
   /** How the folder matched its project: the project's own directory or one of its worktrees. */
   via: 'project' | 'worktree' | null;
-  /** Newest first, capped at SESSION_CAP. */
+  /** What the profile's session mode lets through, newest first, capped at SESSION_CAP. Empty in `hidden` mode. */
   sessions: SessionView[];
-  /** Sessions beyond the cap. */
+  /** Sessions the mode let through beyond the cap. */
   hiddenSessions: number;
+  /** All the folder's sessions, whatever the mode. */
+  totalSessions: number;
+  /** Sessions running or waiting for the user, whatever the mode. */
+  activeSessions: number;
   attention: Attention;
 };
 
@@ -27,10 +31,8 @@ export type ViewModel = {
   /** Registered projects the active profile does not cover yet: the folder picker's options. */
   pickable: UnassignedView[];
   profiles: { id: string; name: string; folderCount: number; active: boolean }[];
-  activeProfile: { id: string; name: string; folders: FolderView[] };
+  activeProfile: { id: string; name: string; sessionMode: SessionMode; folders: FolderView[] };
   unassigned: UnassignedView[];
-  /** Whether the views list sessions under each folder. */
-  showSessions: boolean;
 };
 
 export type ViewInput = {
@@ -63,23 +65,28 @@ const matchFolder = (path: string, input: ViewInput): Match | null => {
   return null;
 };
 
-const buildFolder = (path: string, input: ViewInput): FolderView => {
+const isActive = (s: { activity: Activity }): boolean => WAITING.includes(s.activity) || RUNNING.includes(s.activity);
+
+const buildFolder = (path: string, input: ViewInput, mode: SessionMode): FolderView => {
   const match = matchFolder(path, input);
   if (!match) {
-    return { path, kind: 'not-added', project: null, via: null, sessions: [], hiddenSessions: 0, attention: 'idle' };
+    return { path, kind: 'not-added', project: null, via: null, sessions: [], hiddenSessions: 0, totalSessions: 0, activeSessions: 0, attention: 'idle' };
   }
   const all = (input.sessions[match.project.id] ?? [])
     .filter((s) => !s.parentId && !s.archivedAt)
     // A folder that is a worktree only owns the sessions that ran in it.
     .filter((s) => match.via === 'project' || samePath(s.directory, path))
     .sort((a, b) => b.updatedAt - a.updatedAt);
+  const shown = mode === 'hidden' ? [] : mode === 'active' ? all.filter(isActive) : all;
   return {
     path,
     kind: 'registered',
     project: { id: match.project.id, name: match.project.name },
     via: match.via,
-    sessions: all.slice(0, SESSION_CAP).map(({ id, title, updatedAt, activity }) => ({ id, title, updatedAt, activity })),
-    hiddenSessions: Math.max(0, all.length - SESSION_CAP),
+    sessions: shown.slice(0, SESSION_CAP).map(({ id, title, updatedAt, activity }) => ({ id, title, updatedAt, activity })),
+    hiddenSessions: Math.max(0, shown.length - SESSION_CAP),
+    totalSessions: all.length,
+    activeSessions: all.filter(isActive).length,
     attention: attentionOf(all),
   };
 };
@@ -103,9 +110,13 @@ export const buildViewModel = (input: ViewInput): ViewModel => {
       folderCount: p.folders.length,
       active: p.id === active.id,
     })),
-    activeProfile: { id: active.id, name: active.name, folders: active.folders.map((f) => buildFolder(f, input)) },
+    activeProfile: {
+      id: active.id,
+      name: active.name,
+      sessionMode: active.sessionMode ?? 'all',
+      folders: active.folders.map((f) => buildFolder(f, input, active.sessionMode ?? 'all')),
+    },
     unassigned: projectsNotIn(input, state.profiles.flatMap((p) => p.folders)),
     pickable: projectsNotIn(input, active.folders),
-    showSessions: state.showSessions !== false,
   };
 };

@@ -1,5 +1,6 @@
 import {
   isAbsolutePath,
+  type SessionMode,
   type ViewModel,
   type FolderView,
   type UnassignedView,
@@ -9,7 +10,7 @@ import {
   mountBadge,
   mountBanner,
   mountButton,
-  mountSwitch,
+  mountTabs,
   mountEmpty,
   mountList,
   mountSearchField,
@@ -24,6 +25,7 @@ import {
   type ListHandle,
   type SearchFieldHandle,
   type SelectHandle,
+  type TabsHandle,
   type SeparatorHandle,
   type SpinnerHandle,
   type TextFieldHandle,
@@ -43,7 +45,7 @@ export type ViewHandlers = {
   createProfile(name: string): void; // store selects the new profile afterwards
   renameProfile(id: string, name: string): void;
   deleteProfile(id: string): void;
-  setShowSessions(show: boolean): void;
+  setSessionMode(mode: SessionMode): void;
   addFolder(path: string, profileId?: string): void; // omit profileId = active profile
   removeFolder(path: string): void; // from the active profile
   newSession(path: string): void; // folder path (FolderView.path); store starts a session in that folder's project/worktree and opens the chat
@@ -112,7 +114,7 @@ const ensureViewStyle = (css: string) => {
 
 type FolderCardHandle = {
   element: HTMLElement;
-  update(folder: FolderView, handlers: ViewHandlers, showSessions: boolean): void;
+  update(folder: FolderView, handlers: ViewHandlers, mode: SessionMode): void;
   dispose(): void;
 };
 
@@ -125,7 +127,7 @@ type SessionRow = {
   setSessionId: (id: string) => void;
 };
 
-const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandlers, initialShowSessions: boolean): FolderCardHandle => {
+const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandlers, initialMode: SessionMode): FolderCardHandle => {
   const card = document.createElement('div');
   card.className = 'oc-profiles-folder-card';
 
@@ -174,9 +176,7 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
   actions.className = 'oc-profiles-folder-actions';
 
   const newSessionWrap = document.createElement('span');
-  const removeWrap = document.createElement('span');
   actions.appendChild(newSessionWrap);
-  actions.appendChild(removeWrap);
 
   const handleNewSession = () => {
     if (isStartingSession) return;
@@ -195,13 +195,6 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
     variant: 'default',
     size: 'xs',
     onClick: handleNewSession,
-  });
-
-  const removeButton = mountButton(removeWrap, {
-    label: 'Remove',
-    variant: 'ghost',
-    size: 'xs',
-    onClick: () => currentHandlers.removeFolder(currentFolder.path),
   });
 
   header.appendChild(meta);
@@ -239,7 +232,7 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
 
   let sessionRows: SessionRow[] = [];
 
-  const update = (folder: FolderView, handlers: ViewHandlers, showSessions: boolean) => {
+  const update = (folder: FolderView, handlers: ViewHandlers, mode: SessionMode) => {
     currentFolder = folder;
     currentHandlers = handlers;
 
@@ -254,10 +247,12 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
     pathEl.textContent = folder.path;
     pathEl.title = folder.path;
 
-    // Session count (only when sessions are hidden)
-    const total = folder.sessions.length + folder.hiddenSessions;
-    sessionCount.textContent = `${total} ${total === 1 ? 'session' : 'sessions'}`;
-    sessionCount.style.display = folder.kind === 'registered' && !showSessions ? '' : 'none';
+    // Summary chip (only in hidden mode)
+    const total = folder.totalSessions;
+    sessionCount.textContent =
+      `${total} ${total === 1 ? 'session' : 'sessions'}` +
+      (folder.activeSessions > 0 ? ` · ${folder.activeSessions} active` : '');
+    sessionCount.style.display = folder.kind === 'registered' && mode === 'hidden' ? '' : 'none';
 
     // Worktree badge
     worktreeTag.style.display = folder.via === 'worktree' ? '' : 'none';
@@ -272,11 +267,6 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
       newSessionWrap.style.display = 'none';
     }
 
-    // Remove button handler
-    removeButton.update({
-      onClick: () => handlers.removeFolder(folder.path),
-    });
-
     if (folder.kind === 'not-added') {
       if (!notAddedCallout.parentElement) {
         card.appendChild(notAddedCallout);
@@ -288,12 +278,18 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
       if (notAddedCallout.parentElement) {
         notAddedCallout.remove();
       }
-      sessionsContainer.style.display = showSessions ? '' : 'none';
+      sessionsContainer.style.display = mode === 'hidden' ? 'none' : '';
       if (!sessionsContainer.parentElement) {
         card.appendChild(sessionsContainer);
       }
 
       if (folder.sessions.length === 0) {
+        if (mode === 'active') {
+          emptySessions.textContent =
+            folder.totalSessions > 0 ? `No active sessions · ${folder.totalSessions} total` : 'No active sessions';
+        } else {
+          emptySessions.textContent = 'No sessions yet';
+        }
         emptySessions.style.display = '';
         sessionsList.style.display = 'none';
         moreSessions.style.display = 'none';
@@ -383,7 +379,7 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
     }
   };
 
-  update(initialFolder, initialHandlers, initialShowSessions);
+  update(initialFolder, initialHandlers, initialMode);
 
   return {
     element: card,
@@ -394,7 +390,6 @@ const createFolderCard = (initialFolder: FolderView, initialHandlers: ViewHandle
         startTimerId = null;
       }
       newSessionButton.dispose();
-      removeButton.dispose();
       for (const row of sessionRows) {
         row.badgeHandle.dispose();
         row.openButtonHandle.dispose();
@@ -551,12 +546,71 @@ const createUnassignedCard = (
   };
 };
 
+type FolderRowHandle = {
+  element: HTMLElement;
+  update(folder: FolderView, handlers: ViewHandlers): void;
+  dispose(): void;
+};
+
+const createFolderRow = (initial: FolderView, initialHandlers: ViewHandlers): FolderRowHandle => {
+  const row = document.createElement('div');
+  row.className = 'oc-profiles-config-row';
+
+  const info = document.createElement('div');
+  info.className = 'oc-profiles-unassigned-info';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'oc-profiles-unassigned-name';
+  const pathEl = document.createElement('span');
+  pathEl.className = 'oc-profiles-unassigned-path';
+  info.appendChild(nameEl);
+  info.appendChild(pathEl);
+
+  const actions = document.createElement('div');
+  actions.className = 'oc-profiles-unassigned-actions';
+  row.appendChild(info);
+  row.appendChild(actions);
+
+  let current = initial;
+  let currentHandlers = initialHandlers;
+  const removeBtn = mountButton(actions, {
+    label: 'Remove',
+    variant: 'ghost',
+    size: 'xs',
+    onClick: () => currentHandlers.removeFolder(current.path),
+  });
+
+  const update = (folder: FolderView, handlers: ViewHandlers) => {
+    current = folder;
+    currentHandlers = handlers;
+    nameEl.textContent = getFolderBasename(folder.path);
+    nameEl.title = folder.path;
+    pathEl.textContent = folder.path;
+    pathEl.title = folder.path;
+  };
+  update(initial, initialHandlers);
+
+  return {
+    element: row,
+    update,
+    dispose: () => {
+      removeBtn.dispose();
+      row.remove();
+    },
+  };
+};
+
+const MODE_ITEMS = [
+  { id: 'all', label: 'All' },
+  { id: 'active', label: 'Active' },
+  { id: 'hidden', label: 'Hidden' },
+];
+
 export const mountApp = (root: HTMLElement): App => {
   ensureViewStyle(VIEW_CSS);
 
   let lastState: ViewState | null = null;
   let lastHandlers: ViewHandlers | null = null;
-  let currentNav: { kind: 'profile' } | { kind: 'unassigned' } = { kind: 'profile' };
+  let currentView: 'projects' | 'settings' = 'projects';
 
   // Inline editing state
   let isCreatingProfile = false;
@@ -579,14 +633,97 @@ export const mountApp = (root: HTMLElement): App => {
     root.removeChild(root.firstChild);
   }
 
+  const rerender = () => {
+    if (lastState && lastHandlers) render(lastState, lastHandlers);
+  };
+
   const appContainer = document.createElement('div');
   appContainer.className = 'oc-profiles-app oc-sdk';
   root.appendChild(appContainer);
 
-  // Sidebar (Left column)
+  // Top bar with view navigation
+  const topbar = document.createElement('header');
+  topbar.className = 'oc-profiles-topbar';
+  appContainer.appendChild(topbar);
+
+  const topTitle = document.createElement('h1');
+  topTitle.className = 'oc-profiles-main-title';
+  topTitle.textContent = 'Profiles';
+  topbar.appendChild(topTitle);
+
+  const viewTabsWrap = document.createElement('div');
+  topbar.appendChild(viewTabsWrap);
+  const viewTabs: TabsHandle = mountTabs(viewTabsWrap, {
+    items: [
+      { id: 'projects', label: 'Projects' },
+      { id: 'settings', label: 'Settings' },
+    ],
+    activeId: currentView,
+    trackBackground: true,
+    onChange: (id) => {
+      currentView = id === 'settings' ? 'settings' : 'projects';
+      rerender();
+    },
+  });
+
+  const body = document.createElement('div');
+  body.className = 'oc-profiles-body';
+  appContainer.appendChild(body);
+
+  const bannerSlot = document.createElement('div');
+  bannerSlot.className = 'oc-profiles-banner-slot';
+  body.appendChild(bannerSlot);
+
+  const loadingSlot = document.createElement('div');
+  body.appendChild(loadingSlot);
+
+  // ===================== Projects view =====================
+  const projectsView = document.createElement('section');
+  projectsView.className = 'oc-profiles-projects-view';
+  body.appendChild(projectsView);
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'oc-profiles-toolbar';
+  projectsView.appendChild(toolbar);
+
+  const profileSelectWrap = document.createElement('div');
+  profileSelectWrap.className = 'oc-profiles-toolbar-item';
+  toolbar.appendChild(profileSelectWrap);
+  const profileSelect = mountSelect(profileSelectWrap, {
+    options: [],
+    value: '',
+    onChange: (id) => lastHandlers?.selectProfile(id),
+  });
+
+  const modeTabsWrap = document.createElement('div');
+  modeTabsWrap.className = 'oc-profiles-toolbar-item';
+  toolbar.appendChild(modeTabsWrap);
+  const modeTabs = mountTabs(modeTabsWrap, {
+    items: MODE_ITEMS,
+    activeId: 'all',
+    trackBackground: true,
+    onChange: (id) => {
+      if (id === 'all' || id === 'active' || id === 'hidden') lastHandlers?.setSessionMode(id);
+    },
+  });
+
+  const modeHint = document.createElement('p');
+  modeHint.className = 'oc-profiles-main-subtitle';
+  modeHint.textContent = 'Session display is remembered per profile.';
+  projectsView.appendChild(modeHint);
+
+  const projectsContent = document.createElement('div');
+  projectsContent.className = 'oc-profiles-content';
+  projectsView.appendChild(projectsContent);
+
+  // ===================== Settings view =====================
+  const settingsView = document.createElement('section');
+  settingsView.className = 'oc-profiles-settings-view';
+  body.appendChild(settingsView);
+
   const sidebar = document.createElement('aside');
   sidebar.className = 'oc-profiles-sidebar';
-  appContainer.appendChild(sidebar);
+  settingsView.appendChild(sidebar);
 
   const sidebarHeader = document.createElement('div');
   sidebarHeader.className = 'oc-profiles-sidebar-header';
@@ -601,15 +738,11 @@ export const mountApp = (root: HTMLElement): App => {
     items: [],
     ariaLabel: 'Profiles',
     onSelect: (id: string) => {
-      currentNav = { kind: 'profile' };
       lastHandlers?.selectProfile(id);
-      if (lastState && lastHandlers) {
-        render(lastState, lastHandlers);
-      }
+      rerender();
     },
   });
 
-  // "+ New profile" section
   const newProfileSection = document.createElement('div');
   newProfileSection.className = 'oc-profiles-sidebar-action';
   sidebar.appendChild(newProfileSection);
@@ -640,18 +773,14 @@ export const mountApp = (root: HTMLElement): App => {
     isCreatingProfile = false;
     newProfileDraft = '';
     newProfileError = undefined;
-    if (lastState && lastHandlers) {
-      render(lastState, lastHandlers);
-    }
+    rerender();
   };
 
   const cancelCreateProfile = () => {
     isCreatingProfile = false;
     newProfileDraft = '';
     newProfileError = undefined;
-    if (lastState && lastHandlers) {
-      render(lastState, lastHandlers);
-    }
+    rerender();
   };
 
   const newProfileButton = mountButton(newProfileButtonWrap, {
@@ -662,9 +791,7 @@ export const mountApp = (root: HTMLElement): App => {
       isCreatingProfile = true;
       newProfileDraft = '';
       newProfileError = undefined;
-      if (lastState && lastHandlers) {
-        render(lastState, lastHandlers);
-      }
+      rerender();
       const inp = newProfileFormWrap.querySelector('input');
       inp?.focus();
     },
@@ -706,29 +833,10 @@ export const mountApp = (root: HTMLElement): App => {
     }
   });
 
-  const sepWrap = document.createElement('div');
-  sidebar.appendChild(sepWrap);
-  const sep = mountSeparator(sepWrap, { label: 'Library' });
-
-  const unassignedNavWrap = document.createElement('div');
-  unassignedNavWrap.className = 'oc-profiles-sidebar-section';
-  sidebar.appendChild(unassignedNavWrap);
-
-  const unassignedList = mountList(unassignedNavWrap, {
-    items: [],
-    ariaLabel: 'Unassigned library',
-    onSelect: () => {
-      currentNav = { kind: 'unassigned' };
-      if (lastState && lastHandlers) {
-        render(lastState, lastHandlers);
-      }
-    },
-  });
-
-  // Main area
+  // Settings main
   const main = document.createElement('main');
   main.className = 'oc-profiles-main';
-  appContainer.appendChild(main);
+  settingsView.appendChild(main);
 
   const mainHeader = document.createElement('header');
   mainHeader.className = 'oc-profiles-main-header';
@@ -742,11 +850,10 @@ export const mountApp = (root: HTMLElement): App => {
   headerTitleRow.className = 'oc-profiles-header-title-row';
   headerTop.appendChild(headerTitleRow);
 
-  const mainTitle = document.createElement('h1');
+  const mainTitle = document.createElement('h2');
   mainTitle.className = 'oc-profiles-main-title';
   headerTitleRow.appendChild(mainTitle);
 
-  // Rename form container
   const renameForm = document.createElement('div');
   renameForm.className = 'oc-profiles-rename-form';
   renameForm.style.display = 'none';
@@ -769,17 +876,13 @@ export const mountApp = (root: HTMLElement): App => {
     }
     isRenamingProfile = false;
     renamingProfileId = null;
-    if (lastState && lastHandlers) {
-      render(lastState, lastHandlers);
-    }
+    rerender();
   };
 
   const cancelRename = () => {
     isRenamingProfile = false;
     renamingProfileId = null;
-    if (lastState && lastHandlers) {
-      render(lastState, lastHandlers);
-    }
+    rerender();
   };
 
   const renameSaveBtn = mountButton(renameActions, {
@@ -811,16 +914,9 @@ export const mountApp = (root: HTMLElement): App => {
     }
   });
 
-  // Header actions (Rename, Delete, Add Folder)
   const headerActions = document.createElement('div');
   headerActions.className = 'oc-profiles-header-actions';
   headerTop.appendChild(headerActions);
-
-  const showSessionsSwitch = mountSwitch(headerActions, {
-    label: 'Show sessions',
-    checked: true,
-    onChange: (next: boolean) => lastHandlers?.setShowSessions(next),
-  });
 
   const renameBtn = mountButton(headerActions, {
     label: 'Rename',
@@ -858,9 +954,7 @@ export const mountApp = (root: HTMLElement): App => {
     size: 'sm',
     onClick: () => {
       isAddFolderOpen = !isAddFolderOpen;
-      if (lastState && lastHandlers) {
-        render(lastState, lastHandlers);
-      }
+      rerender();
     },
   });
 
@@ -868,7 +962,6 @@ export const mountApp = (root: HTMLElement): App => {
   mainSubtitle.className = 'oc-profiles-main-subtitle';
   mainHeader.appendChild(mainSubtitle);
 
-  // Delete confirmation box
   const deleteConfirmBox = document.createElement('div');
   deleteConfirmBox.className = 'oc-profiles-delete-confirm';
   deleteConfirmBox.style.display = 'none';
@@ -892,9 +985,7 @@ export const mountApp = (root: HTMLElement): App => {
       }
       isConfirmingDelete = false;
       deletingProfileId = null;
-      if (lastState && lastHandlers) {
-        render(lastState, lastHandlers);
-      }
+      rerender();
     },
   });
 
@@ -905,9 +996,7 @@ export const mountApp = (root: HTMLElement): App => {
     onClick: () => {
       isConfirmingDelete = false;
       deletingProfileId = null;
-      if (lastState && lastHandlers) {
-        render(lastState, lastHandlers);
-      }
+      rerender();
     },
   });
 
@@ -930,9 +1019,7 @@ export const mountApp = (root: HTMLElement): App => {
     searchPickableQuery = '';
     typedPathDraft = '';
     typedPathError = undefined;
-    if (lastState && lastHandlers) {
-      render(lastState, lastHandlers);
-    }
+    rerender();
   };
 
   const addFolderCloseBtn = mountButton(addFolderPanelHeader, {
@@ -942,7 +1029,6 @@ export const mountApp = (root: HTMLElement): App => {
     onClick: closeAddFolderPanel,
   });
 
-  // Section (a): Registered projects
   const pickableSection = document.createElement('div');
   pickableSection.className = 'oc-profiles-add-section';
   addFolderPanel.appendChild(pickableSection);
@@ -989,7 +1075,6 @@ export const mountApp = (root: HTMLElement): App => {
   addFolderPanel.appendChild(addFolderSepWrap);
   const addFolderSep = mountSeparator(addFolderSepWrap, { label: 'or' });
 
-  // Section (b): Typed path
   const typedSection = document.createElement('div');
   typedSection.className = 'oc-profiles-add-section';
   addFolderPanel.appendChild(typedSection);
@@ -1063,28 +1148,48 @@ export const mountApp = (root: HTMLElement): App => {
     }
   };
 
-  const bannerSlot = document.createElement('div');
-  bannerSlot.className = 'oc-profiles-banner-slot';
-  main.appendChild(bannerSlot);
+  // Profile folders (config rows)
+  const foldersLabel = document.createElement('div');
+  foldersLabel.className = 'oc-profiles-section-label';
+  foldersLabel.textContent = 'Folders in this profile';
+  main.appendChild(foldersLabel);
 
-  const contentArea = document.createElement('section');
-  contentArea.className = 'oc-profiles-content';
-  main.appendChild(contentArea);
+  const foldersEmpty = document.createElement('p');
+  foldersEmpty.className = 'oc-profiles-empty-hint';
+  foldersEmpty.textContent = 'No folders yet. Use "+ Add folder" to pick a project or type a path.';
+  main.appendChild(foldersEmpty);
+
+  const foldersContainer = document.createElement('div');
+  foldersContainer.className = 'oc-profiles-content';
+  main.appendChild(foldersContainer);
+
+  // Unassigned
+  const unassignedLabel = document.createElement('div');
+  unassignedLabel.className = 'oc-profiles-section-label';
+  main.appendChild(unassignedLabel);
+
+  const unassignedEmpty = document.createElement('p');
+  unassignedEmpty.className = 'oc-profiles-empty-hint';
+  unassignedEmpty.textContent = 'Every project is in a profile.';
+  main.appendChild(unassignedEmpty);
+
+  const unassignedContainer = document.createElement('div');
+  unassignedContainer.className = 'oc-profiles-content';
+  main.appendChild(unassignedContainer);
 
   let corruptBanner: BannerHandle | null = null;
   let errorBanner: BannerHandle | null = null;
   let spinnerHandle: SpinnerHandle | null = null;
   let emptyProfileHandle: EmptyHandle | null = null;
-  let emptyUnassignedHandle: EmptyHandle | null = null;
 
   const folderCardPool = new Map<string, FolderCardHandle>();
+  const folderRowPool = new Map<string, FolderRowHandle>();
   const unassignedCardPool = new Map<string, UnassignedCardHandle>();
 
   const render = (state: ViewState, handlers: ViewHandlers) => {
     lastState = state;
     lastHandlers = handlers;
 
-    // Reset profile-specific editing states if active profile changed
     if (renamingProfileId && renamingProfileId !== state.vm.activeProfile.id) {
       isRenamingProfile = false;
       renamingProfileId = null;
@@ -1094,7 +1199,7 @@ export const mountApp = (root: HTMLElement): App => {
       deletingProfileId = null;
     }
 
-    // 1. Corrupt state banner
+    // Banners
     if (state.corrupt) {
       const corruptBody =
         "Saved profiles couldn't be read. Showing defaults; nothing is overwritten until you make a change.";
@@ -1112,7 +1217,6 @@ export const mountApp = (root: HTMLElement): App => {
       corruptBanner = null;
     }
 
-    // 2. Error banner
     if (state.status === 'error') {
       const errorBody = state.error || 'An unexpected error occurred loading profiles.';
       if (!errorBanner) {
@@ -1129,20 +1233,107 @@ export const mountApp = (root: HTMLElement): App => {
       errorBanner = null;
     }
 
-    // 3. Sidebar lists update
-    const profileItems = state.vm.profiles.map((p) => ({
-      id: p.id,
-      title: p.name,
-      meta: p.folderCount === 1 ? '1 folder' : `${p.folderCount} folders`,
-      badge: p.active ? { label: 'active', tone: 'primary' as Tone } : undefined,
-    }));
+    viewTabs.update({ activeId: currentView });
+
+    // Loading
+    if (state.status === 'loading') {
+      if (!spinnerHandle) {
+        spinnerHandle = mountSpinner(loadingSlot, { label: 'Loading profiles and projects…' });
+      }
+      projectsView.style.display = 'none';
+      settingsView.style.display = 'none';
+      return;
+    }
+    if (spinnerHandle) {
+      spinnerHandle.dispose();
+      spinnerHandle = null;
+    }
+
+    const active = state.vm.activeProfile;
+
+    if (currentView === 'projects') {
+      projectsView.style.display = '';
+      settingsView.style.display = 'none';
+
+      profileSelect.update({
+        options: state.vm.profiles.map((p) => ({ id: p.id, label: p.name })),
+        value: active.id,
+      });
+      modeTabs.update({ activeId: active.sessionMode });
+
+      // Dispose settings-only pools
+      for (const r of folderRowPool.values()) r.dispose();
+      folderRowPool.clear();
+      for (const c of unassignedCardPool.values()) c.dispose();
+      unassignedCardPool.clear();
+
+      if (active.folders.length === 0) {
+        for (const card of folderCardPool.values()) card.dispose();
+        folderCardPool.clear();
+        const emptyProps = {
+          title: 'No folders yet',
+          body: 'Add project folders to this profile in Settings.',
+          action: {
+            label: 'Open Settings',
+            onClick: () => {
+              currentView = 'settings';
+              rerender();
+            },
+          },
+        };
+        if (!emptyProfileHandle) {
+          emptyProfileHandle = mountEmpty(projectsContent, emptyProps);
+        } else {
+          emptyProfileHandle.update(emptyProps);
+        }
+      } else {
+        if (emptyProfileHandle) {
+          emptyProfileHandle.dispose();
+          emptyProfileHandle = null;
+        }
+        const currentPaths = new Set(active.folders.map((f) => f.path));
+        for (const [path, card] of folderCardPool) {
+          if (!currentPaths.has(path)) {
+            card.dispose();
+            folderCardPool.delete(path);
+          }
+        }
+        for (const folder of active.folders) {
+          let card = folderCardPool.get(folder.path);
+          if (!card) {
+            card = createFolderCard(folder, handlers, active.sessionMode);
+            folderCardPool.set(folder.path, card);
+          } else {
+            card.element.style.display = '';
+            card.update(folder, handlers, active.sessionMode);
+          }
+          projectsContent.appendChild(card.element);
+        }
+      }
+      return;
+    }
+
+    // Settings view
+    projectsView.style.display = 'none';
+    settingsView.style.display = '';
+
+    for (const card of folderCardPool.values()) card.dispose();
+    folderCardPool.clear();
+    if (emptyProfileHandle) {
+      emptyProfileHandle.dispose();
+      emptyProfileHandle = null;
+    }
 
     profilesList.update({
-      items: profileItems,
-      selectedId: currentNav.kind === 'profile' ? state.vm.activeProfile.id : null,
+      items: state.vm.profiles.map((p) => ({
+        id: p.id,
+        title: p.name,
+        meta: p.folderCount === 1 ? '1 folder' : `${p.folderCount} folders`,
+        badge: p.active ? { label: 'selected', tone: 'primary' as Tone } : undefined,
+      })),
+      selectedId: active.id,
     });
 
-    // New profile form toggle
     if (isCreatingProfile) {
       newProfileButtonWrap.style.display = 'none';
       newProfileFormWrap.style.display = '';
@@ -1153,237 +1344,103 @@ export const mountApp = (root: HTMLElement): App => {
       newProfileFormWrap.style.display = 'none';
     }
 
-    unassignedList.update({
-      items: [
-        {
-          id: 'unassigned',
-          title: 'Unassigned',
-          meta: String(state.vm.unassigned.length),
-        },
-      ],
-      selectedId: currentNav.kind === 'unassigned' ? 'unassigned' : null,
-    });
-
-    // 4. Loading state handling
-    if (state.status === 'loading') {
-      if (!spinnerHandle) {
-        spinnerHandle = mountSpinner(contentArea, {
-          label: 'Loading profiles and projects…',
-        });
-      }
-      for (const card of folderCardPool.values()) card.element.style.display = 'none';
-      for (const card of unassignedCardPool.values()) card.element.style.display = 'none';
-      if (emptyProfileHandle) {
-        emptyProfileHandle.dispose();
-        emptyProfileHandle = null;
-      }
-      if (emptyUnassignedHandle) {
-        emptyUnassignedHandle.dispose();
-        emptyUnassignedHandle = null;
-      }
-      mainTitle.textContent = 'Loading…';
-      mainSubtitle.textContent = '';
-      headerActions.style.display = 'none';
-      addFolderPanel.style.display = 'none';
-      return;
-    }
-
-    if (spinnerHandle) {
-      spinnerHandle.dispose();
-      spinnerHandle = null;
-    }
-
-    // 5. Profile view
-    if (currentNav.kind === 'profile') {
-      const active = state.vm.activeProfile;
-      headerActions.style.display = '';
-
-      showSessionsSwitch.update({ checked: state.vm.showSessions });
-      // Inline rename UI
-      if (isRenamingProfile && renamingProfileId === active.id) {
-        mainTitle.style.display = 'none';
-        renameForm.style.display = '';
-        renameSaveBtn.update({ disabled: !renameDraft.trim() });
-        renameBtn.update({ disabled: true });
-        deleteBtn.update({ disabled: true });
-      } else {
-        mainTitle.style.display = '';
-        mainTitle.textContent = active.name;
-        renameForm.style.display = 'none';
-        renameBtn.update({ disabled: false });
-        deleteBtn.update({ disabled: false });
-      }
-
-      // Inline delete confirmation UI
-      if (isConfirmingDelete && deletingProfileId === active.id) {
-        deleteConfirmBox.style.display = '';
-        const isOnlyProfile = state.vm.profiles.length === 1;
-        deleteConfirmText.textContent = isOnlyProfile
-          ? `Delete "${active.name}"? Its folders move to Unassigned unless another profile holds them. Projects aren't touched. This is your last profile, so it will reset to an empty Default profile.`
-          : `Delete "${active.name}"? Its folders move to Unassigned unless another profile holds them. Projects aren't touched.`;
-      } else {
-        deleteConfirmBox.style.display = 'none';
-      }
-
-      const count = active.folders.length;
-      mainSubtitle.textContent = `${count} ${count === 1 ? 'project folder' : 'project folders'}`;
-
-      // Add folder panel
-      if (isAddFolderOpen) {
-        addFolderPanel.style.display = '';
-        addFolderPanelTitle.textContent = `Add folder to ${active.name}`;
-        addFolderBtn.update({ label: '✕ Close add' });
-        addFolderSearch.update({ value: searchPickableQuery });
-        updatePickableList(state, handlers);
-        addFolderTypedField.update({ value: typedPathDraft, error: typedPathError });
-      } else {
-        addFolderPanel.style.display = 'none';
-        addFolderBtn.update({ label: '+ Add folder' });
-      }
-
-      // Dispose unassigned cards and empty unassigned
-      for (const card of unassignedCardPool.values()) {
-        card.dispose();
-      }
-      unassignedCardPool.clear();
-      if (emptyUnassignedHandle) {
-        emptyUnassignedHandle.dispose();
-        emptyUnassignedHandle = null;
-      }
-
-      if (count === 0) {
-        for (const card of folderCardPool.values()) {
-          card.dispose();
-        }
-        folderCardPool.clear();
-
-        const emptyProps = {
-          title: 'No folders yet',
-          body: 'Add some from Unassigned or choose a project above.',
-          action: {
-            label: '+ Add folder',
-            onClick: () => {
-              isAddFolderOpen = true;
-              render(state, handlers);
-            },
-          },
-        };
-
-        if (!emptyProfileHandle) {
-          emptyProfileHandle = mountEmpty(contentArea, emptyProps);
-        } else {
-          emptyProfileHandle.update(emptyProps);
-        }
-      } else {
-        if (emptyProfileHandle) {
-          emptyProfileHandle.dispose();
-          emptyProfileHandle = null;
-        }
-
-        const currentPaths = new Set(active.folders.map((f) => f.path));
-        for (const [path, card] of folderCardPool) {
-          if (!currentPaths.has(path)) {
-            card.dispose();
-            folderCardPool.delete(path);
-          }
-        }
-
-        for (const folder of active.folders) {
-          let card = folderCardPool.get(folder.path);
-          if (!card) {
-            card = createFolderCard(folder, handlers, state.vm.showSessions);
-            folderCardPool.set(folder.path, card);
-          } else {
-            card.element.style.display = '';
-            card.update(folder, handlers, state.vm.showSessions);
-          }
-          contentArea.appendChild(card.element);
-        }
-      }
-      return;
-    }
-
-    // 6. Unassigned view
-    if (currentNav.kind === 'unassigned') {
+    if (isRenamingProfile && renamingProfileId === active.id) {
+      mainTitle.style.display = 'none';
+      renameForm.style.display = '';
+      renameSaveBtn.update({ disabled: !renameDraft.trim() });
+      renameBtn.update({ disabled: true });
+      deleteBtn.update({ disabled: true });
+    } else {
       mainTitle.style.display = '';
-      mainTitle.textContent = 'Unassigned projects';
+      mainTitle.textContent = active.name;
       renameForm.style.display = 'none';
+      renameBtn.update({ disabled: false });
+      deleteBtn.update({ disabled: false });
+    }
+
+    if (isConfirmingDelete && deletingProfileId === active.id) {
+      deleteConfirmBox.style.display = '';
+      const isOnlyProfile = state.vm.profiles.length === 1;
+      deleteConfirmText.textContent = isOnlyProfile
+        ? `Delete "${active.name}"? Its folders move to Unassigned unless another profile holds them. Projects aren't touched. This is your last profile, so it will reset to an empty Default profile.`
+        : `Delete "${active.name}"? Its folders move to Unassigned unless another profile holds them. Projects aren't touched.`;
+    } else {
       deleteConfirmBox.style.display = 'none';
-      headerActions.style.display = 'none';
+    }
+
+    const count = active.folders.length;
+    mainSubtitle.textContent = `${count} ${count === 1 ? 'project folder' : 'project folders'}`;
+
+    if (isAddFolderOpen) {
+      addFolderPanel.style.display = '';
+      addFolderPanelTitle.textContent = `Add folder to ${active.name}`;
+      addFolderBtn.update({ label: '✕ Close add' });
+      addFolderSearch.update({ value: searchPickableQuery });
+      updatePickableList(state, handlers);
+      addFolderTypedField.update({ value: typedPathDraft, error: typedPathError });
+    } else {
       addFolderPanel.style.display = 'none';
+      addFolderBtn.update({ label: '+ Add folder' });
+    }
 
-      const uCount = state.vm.unassigned.length;
-      mainSubtitle.textContent = `Projects in OpenChamber not included in any profile (${uCount})`;
-
-      for (const card of folderCardPool.values()) {
-        card.dispose();
+    // Folder rows
+    foldersEmpty.style.display = count === 0 ? '' : 'none';
+    const rowPaths = new Set(active.folders.map((f) => f.path));
+    for (const [path, r] of folderRowPool) {
+      if (!rowPaths.has(path)) {
+        r.dispose();
+        folderRowPool.delete(path);
       }
-      folderCardPool.clear();
-      if (emptyProfileHandle) {
-        emptyProfileHandle.dispose();
-        emptyProfileHandle = null;
-      }
-
-      if (uCount === 0) {
-        for (const card of unassignedCardPool.values()) {
-          card.dispose();
-        }
-        unassignedCardPool.clear();
-
-        const emptyProps = {
-          title: 'Every project is in a profile.',
-          body: 'All registered projects in OpenChamber belong to at least one profile.',
-        };
-
-        if (!emptyUnassignedHandle) {
-          emptyUnassignedHandle = mountEmpty(contentArea, emptyProps);
-        } else {
-          emptyUnassignedHandle.update(emptyProps);
-        }
+    }
+    for (const folder of active.folders) {
+      let r = folderRowPool.get(folder.path);
+      if (!r) {
+        r = createFolderRow(folder, handlers);
+        folderRowPool.set(folder.path, r);
       } else {
-        if (emptyUnassignedHandle) {
-          emptyUnassignedHandle.dispose();
-          emptyUnassignedHandle = null;
-        }
-
-        const currentPaths = new Set(state.vm.unassigned.map((u) => u.path));
-        for (const [path, card] of unassignedCardPool) {
-          if (!currentPaths.has(path)) {
-            card.dispose();
-            unassignedCardPool.delete(path);
-          }
-        }
-
-        for (const item of state.vm.unassigned) {
-          let card = unassignedCardPool.get(item.path);
-          if (!card) {
-            card = createUnassignedCard(item, state.vm.profiles, handlers);
-            unassignedCardPool.set(item.path, card);
-          } else {
-            card.element.style.display = '';
-            card.update(item, state.vm.profiles, handlers);
-          }
-          contentArea.appendChild(card.element);
-        }
+        r.update(folder, handlers);
       }
+      foldersContainer.appendChild(r.element);
+    }
+
+    // Unassigned
+    const uCount = state.vm.unassigned.length;
+    unassignedLabel.textContent = `Unassigned projects (${uCount})`;
+    unassignedEmpty.style.display = uCount === 0 ? '' : 'none';
+    const uPaths = new Set(state.vm.unassigned.map((u) => u.path));
+    for (const [path, card] of unassignedCardPool) {
+      if (!uPaths.has(path)) {
+        card.dispose();
+        unassignedCardPool.delete(path);
+      }
+    }
+    for (const item of state.vm.unassigned) {
+      let card = unassignedCardPool.get(item.path);
+      if (!card) {
+        card = createUnassignedCard(item, state.vm.profiles, handlers);
+        unassignedCardPool.set(item.path, card);
+      } else {
+        card.update(item, state.vm.profiles, handlers);
+      }
+      unassignedContainer.appendChild(card.element);
     }
   };
 
   return {
     render,
     dispose: () => {
+      viewTabs.dispose();
+      profileSelect.dispose();
+      modeTabs.dispose();
       profilesList.dispose();
       newProfileButton.dispose();
       newProfileTextField.dispose();
       newProfileCreateBtn.dispose();
       newProfileCancelBtn.dispose();
-      sep.dispose();
-      unassignedList.dispose();
 
       renameSaveBtn.dispose();
       renameCancelBtn.dispose();
       renameBtn.dispose();
-      showSessionsSwitch.dispose();
       deleteBtn.dispose();
       addFolderBtn.dispose();
       deleteConfirmBtn.dispose();
@@ -1396,35 +1453,20 @@ export const mountApp = (root: HTMLElement): App => {
       addFolderTypedField.dispose();
       addFolderTypedBtn.dispose();
 
-      if (corruptBanner) {
-        corruptBanner.dispose();
-        corruptBanner = null;
-      }
-      if (errorBanner) {
-        errorBanner.dispose();
-        errorBanner = null;
-      }
-      if (spinnerHandle) {
-        spinnerHandle.dispose();
-        spinnerHandle = null;
-      }
-      if (emptyProfileHandle) {
-        emptyProfileHandle.dispose();
-        emptyProfileHandle = null;
-      }
-      if (emptyUnassignedHandle) {
-        emptyUnassignedHandle.dispose();
-        emptyUnassignedHandle = null;
-      }
+      corruptBanner?.dispose();
+      corruptBanner = null;
+      errorBanner?.dispose();
+      errorBanner = null;
+      spinnerHandle?.dispose();
+      spinnerHandle = null;
+      emptyProfileHandle?.dispose();
+      emptyProfileHandle = null;
 
-      for (const card of folderCardPool.values()) {
-        card.dispose();
-      }
+      for (const card of folderCardPool.values()) card.dispose();
       folderCardPool.clear();
-
-      for (const card of unassignedCardPool.values()) {
-        card.dispose();
-      }
+      for (const r of folderRowPool.values()) r.dispose();
+      folderRowPool.clear();
+      for (const card of unassignedCardPool.values()) card.dispose();
       unassignedCardPool.clear();
 
       appContainer.remove();

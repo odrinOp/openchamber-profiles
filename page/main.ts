@@ -1,5 +1,6 @@
 import { connectHost } from '@openchamber/sdk';
 import { applyHostReady } from '@openchamber/sdk/ui';
+import type { SessionMode } from '../src/core/index.ts';
 import { createStore } from './store.ts';
 import { mountApp } from './view.ts';
 
@@ -12,7 +13,7 @@ const store = createStore(host);
 
 const handlers = {
   selectProfile: (id: string) => store.selectProfile(id),
-  setShowSessions: (show: boolean) => store.setShowSessions(show),
+  setSessionMode: (mode: SessionMode) => store.setSessionMode(mode),
   createProfile: (name: string) => store.createProfile(name),
   renameProfile: (id: string, name: string) => store.renameProfile(id, name),
   deleteProfile: (id: string) => store.deleteProfile(id),

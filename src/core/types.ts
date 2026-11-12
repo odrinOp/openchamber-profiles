@@ -1,11 +1,13 @@
 /** Persisted shape, stored under STORAGE_KEY. */
-export type Profile = { id: string; name: string; folders: string[] };
+/** Which of a profile's sessions the list view shows: all, only the ones needing attention or running, or none. */
+export type SessionMode = 'all' | 'active' | 'hidden';
+export const SESSION_MODES: readonly SessionMode[] = ['all', 'active', 'hidden'];
+
+export type Profile = { id: string; name: string; folders: string[]; sessionMode?: SessionMode };
 export type ProfilesState = {
   version: 1;
   activeId: string;
   profiles: Profile[];
-  /** Show session lists in the extension's views. Missing in older saves: treated as true. */
-  showSessions?: boolean;
 };
 
 /** Minimal structural copies of the SDK snapshots, so core stays pure. */

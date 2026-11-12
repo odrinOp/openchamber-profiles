@@ -33,7 +33,7 @@ Status: building (branch `feat/profiles-v1`). Approach **A** (documented APIs on
 2. Choose an active profile.
 3. See only the active profile's projects and sessions in the extension's UI, with live state.
 4. Start a new session or open an existing one in one of the profile's projects.
-5. Toggle whether sessions are shown at all (see "Hide sessions toggle").
+5. Per profile, show all sessions, only the active ones, or none (see "Two views and session modes").
 5. See and assign Unassigned folders.
 6. Move a folder to a profile from the Files view.
 
@@ -50,16 +50,19 @@ Status: building (branch `feat/profiles-v1`). Approach **A** (documented APIs on
 - **Actions**: New session (`startSession({ projectId, navigation: 'open' })`), Open (`openSession(id)`).
 - **File action "Move folder to profile"**: receives a `GuestFileItem`; exact UX (background vs open mode, which profile) is decided in milestone 6 once the capability/entry constraints are tested.
 
-## Hide sessions toggle
+## Two views and session modes
 
-Both surfaces can show folders only, without session lists.
+The full-screen page has two views, switched by a top nav.
 
-- **Setting**: `showSessions: boolean` (default `true`), stored with the profiles in `host.storage`; the choice is global, and optionally per profile (`profile.showSessions` overrides the global one; decide in implementation, default global only).
-- **Page**: a switch "Show sessions" in the header of the right column. Off = each folder card collapses to name, status dot, session count and the New session button. Running/waiting sessions still raise the dot and the count badge so activity is not hidden completely.
-- **Work Status section**: a switch in the section (or `setStatusControls` button "Hide sessions"). Off = the folder list keeps dot + count, which is what the section already shows by default.
-- **Persistence**: saved immediately; survives reload. Both surfaces listen to storage changes via re-read on `onReady`, so toggling in one is reflected in the other.
-- **Not covered**: the host's own sidebar. An extension cannot hide sessions or projects there (see Background), so this toggle only affects the extension's views.
-- Optional: "Hide sessions of other profiles" is implicit, since only the active profile is listed.
+1. **Projects** (default, list view): the active profile's folders with live sessions. A profile switcher and a per-profile **session mode** control sit at the top.
+   - `all` — every session of each folder.
+   - `active` — only running/waiting sessions; folders without any say "No active sessions · N total".
+   - `hidden` — no session list; each folder shows a summary ("4 sessions · 1 active") and keeps its status dot.
+   - New session / Open stay available in every mode.
+2. **Settings** (config view): create/rename/delete profiles; add folders (picker from registered projects, or a typed absolute path) and remove them; list registered projects no profile covers.
+
+- **Storage**: `Profile.sessionMode?: 'all' | 'active' | 'hidden'` (missing = `all`), saved with the profile in `host.storage`. The earlier global `showSessions: false` flag migrates to `hidden` on every profile when read.
+- **Not covered**: the host's own sidebar; an extension cannot hide sessions or projects there (see Background), so modes affect the extension's views only.
 
 ## Surfaces
 
@@ -121,7 +124,7 @@ Exact keys confirmed by `openchamber-guest-check`.
 1. **Scaffold** — package.json, SDK + Bun devDeps, manifest, empty page entry, bundle/check scripts, `openchamber-guest-check` passes, installs locally from folder.
 2. **Core + storage** ✅ — profile model, path matching, storage read/write, view-model incl. Unassigned, unit tests (`bun test`).
 3. **Read-only views** (+ minimal "Add to profile"/Remove so it is testable) ✅ — live projects/sessions via subscriptions; page renders the active profile; "not added" state; Unassigned view. *Then: time-boxed spike on approach B.*
-4. **Editing + toggle** ✅ — create/rename/delete profile, add/remove folders (picker + typed path), Unassigned → "Add to profile", switch active profile, show/hide sessions toggle.
+4. **Editing + session modes** ✅ — create/rename/delete profile, add/remove folders (picker + typed path), Unassigned → "Add to profile", switch active profile, per-profile session mode, Projects/Settings views.
 5. **Actions** ✅ — New session, Open session.
 6. **Status section + file action** — Work Status section (page logic reused); "Move folder to profile" file action.
 7. **Polish** — empty states, errors (`state: 'error' | 'loading'`), keyboard/theme check, README with screenshots, CI running `openchamber-guest-check`.

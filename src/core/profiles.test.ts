@@ -8,7 +8,7 @@ import {
   removeFolder,
   renameProfile,
   setActiveProfile,
-  setShowSessions,
+  setSessionMode,
 } from './profiles.ts';
 
 describe('profiles', () => {
@@ -72,11 +72,13 @@ describe('profiles', () => {
     expect(() => moveFolder(s, '/a', 'nope')).toThrow();
   });
 
-  test('setShowSessions toggles and drops the key when shown', () => {
-    const hidden = setShowSessions(defaultState(), false);
-    expect(hidden.showSessions).toBe(false);
-    const shown = setShowSessions(hidden, true);
-    expect('showSessions' in shown).toBe(false);
-    expect(shown).toEqual(defaultState());
+  test('setSessionMode is per profile and drops the key for all', () => {
+    let s = createProfile(defaultState(), 'Work');
+    s = setSessionMode(s, 'work', 'active');
+    expect(s.profiles.find((p) => p.id === 'work')!.sessionMode).toBe('active');
+    expect(s.profiles.find((p) => p.id === 'default')!.sessionMode).toBeUndefined();
+    s = setSessionMode(s, 'work', 'all');
+    expect('sessionMode' in s.profiles.find((p) => p.id === 'work')!).toBe(false);
+    expect(() => setSessionMode(s, 'nope', 'hidden')).toThrow();
   });
 });

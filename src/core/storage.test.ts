@@ -57,10 +57,14 @@ describe('storage', () => {
     expect(store.data[STORAGE_KEY]).toBe('garbage');
   });
 
-  test('showSessions false round-trips; missing means shown', () => {
-    const base = { version: 1, activeId: 'w', profiles: [{ id: 'w', name: 'W', folders: [] }] };
-    expect(parseState({ ...base, showSessions: false }).state.showSessions).toBe(false);
-    expect(parseState(base).state.showSessions).toBeUndefined();
-    expect(parseState({ ...base, showSessions: 'no' }).state.showSessions).toBeUndefined();
+  test('sessionMode is kept per profile; unknown or missing means all', () => {
+    const base = { version: 1, activeId: 'w', profiles: [{ id: 'w', name: 'W', folders: [], sessionMode: 'active' }] };
+    expect(parseState(base).state.profiles[0]!.sessionMode).toBe('active');
+    expect(parseState({ ...base, profiles: [{ ...base.profiles[0], sessionMode: 'nope' }] }).state.profiles[0]!.sessionMode).toBeUndefined();
+  });
+
+  test('legacy global showSessions:false migrates to hidden on every profile', () => {
+    const legacy = { version: 1, activeId: 'w', showSessions: false, profiles: [{ id: 'w', name: 'W', folders: [] }, { id: 'p', name: 'P', folders: [] }] };
+    expect(parseState(legacy).state.profiles.map((p) => p.sessionMode)).toEqual(['hidden', 'hidden']);
   });
 });

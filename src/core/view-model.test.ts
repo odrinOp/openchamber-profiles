@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { addFolder, createProfile, defaultState, setActiveProfile, setShowSessions } from './profiles.ts';
+import { addFolder, createProfile, defaultState, setActiveProfile, setSessionMode } from './profiles.ts';
 import type { Project, Session, Worktree } from './types.ts';
 import { buildViewModel, SESSION_CAP } from './view-model.ts';
 
@@ -125,9 +125,25 @@ describe('view model', () => {
     expect(vm.unassigned.map((p) => p.projectId)).toEqual(['p3']);
   });
 
-  test('showSessions defaults to true and follows the state', () => {
-    const s = stateWith(['/work/api']);
-    expect(buildViewModel({ state: s, projects, worktrees, sessions: {} }).showSessions).toBe(true);
-    expect(buildViewModel({ state: setShowSessions(s, false), projects, worktrees, sessions: {} }).showSessions).toBe(false);
+  test('session modes: all, active only, hidden keep the counts', () => {
+    const sessions = {
+      p1: [
+        session({ id: 'a', updatedAt: 3, activity: 'running' }),
+        session({ id: 'b', updatedAt: 2, activity: 'idle' }),
+        session({ id: 'c', updatedAt: 1, activity: 'waiting-question' }),
+      ],
+    };
+    const folderOf = (mode: 'all' | 'active' | 'hidden') => {
+      const vm = buildViewModel({ state: setSessionMode(stateWith(['/work/api']), 'work', mode), projects, worktrees, sessions });
+      expect(vm.activeProfile.sessionMode).toBe(mode);
+      return vm.activeProfile.folders[0]!;
+    };
+    expect(folderOf('all').sessions.map((s) => s.id)).toEqual(['a', 'b', 'c']);
+    expect(folderOf('active').sessions.map((s) => s.id)).toEqual(['a', 'c']);
+    const hidden = folderOf('hidden');
+    expect(hidden.sessions).toEqual([]);
+    expect(hidden.totalSessions).toBe(3);
+    expect(hidden.activeSessions).toBe(2);
+    expect(hidden.attention).toBe('waiting');
   });
 });

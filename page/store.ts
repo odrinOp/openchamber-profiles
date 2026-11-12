@@ -9,7 +9,8 @@ import {
   removeFolder,
   saveState,
   setActiveProfile,
-  setShowSessions,
+  setSessionMode,
+  type SessionMode,
   defaultState,
   type Project,
   type ProfilesState,
@@ -35,7 +36,8 @@ export type Store = {
   get(): StoreState;
   subscribe(listener: () => void): () => void;
   selectProfile(id: string): void;
-  setShowSessions(show: boolean): void;
+  /** Set how the active profile's sessions are listed. */
+  setSessionMode(mode: SessionMode): void;
   createProfile(name: string): void;
   renameProfile(id: string, name: string): void;
   deleteProfile(id: string): void;
@@ -216,7 +218,7 @@ export const createStore = (host: HostClient): Store => {
       return () => listeners.delete(listener);
     },
     selectProfile: (id) => edit((s) => setActiveProfile(s, id)),
-    setShowSessions: (show) => edit((s) => setShowSessions(s, show)),
+    setSessionMode: (mode) => edit((s) => setSessionMode(s, s.activeId, mode)),
     createProfile: (name) => edit((s) => {
       const next = createProfile(s, name);
       return setActiveProfile(next, next.profiles[next.profiles.length - 1]!.id);
